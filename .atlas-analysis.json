@@ -1,0 +1,113 @@
+{
+  "projectType": "saas",
+  "projectName": "Valstore",
+  "projectDescription": "A Flutter mobile app that lets Valorant players view their daily shop, night market, bundles, and skin gallery with wishlist notifications.",
+  "theme": "almond",
+  "primaryColor": "#f84555",
+  "lightColor": "#962d36",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "getting-started/installation", "getting-started/login"]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/player-shop",
+              "features/night-market",
+              "features/bundles",
+              "features/gallery",
+              "features/wishlist",
+              "features/notifications"
+            ]
+          },
+          {
+            "group": "Account",
+            "pages": [
+              "account/inventory",
+              "account/loadout",
+              "account/settings"
+            ]
+          },
+          {
+            "group": "Troubleshooting",
+            "pages": [
+              "troubleshooting/common-issues",
+              "troubleshooting/notifications"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Developer Guide",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "dev/overview",
+              "dev/services",
+              "dev/models"
+            ]
+          },
+          {
+            "group": "APIs",
+            "pages": [
+              "dev/riot-api",
+              "dev/valorant-api",
+              "dev/firebase"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "dev/setup",
+              "dev/contributing"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Daily player shop with skin previews and prices",
+    "Night Market with discounted skin offers",
+    "Current bundle browsing with full skin details",
+    "Skin gallery with search and filtering",
+    "Wishlist with push notifications when wished skins appear in shop",
+    "Background notifications for store renewal, night market, and bundles",
+    "Player account info including wallet balances and account level",
+    "Player loadout and equipped skin viewer",
+    "Riot Games SSO login via in-app WebView",
+    "Firebase-backed skin database and wishlist persistence"
+  ],
+  "publicApiSurface": [
+    "RiotService.getStore()",
+    "RiotService.getNightMarket()",
+    "RiotService.getCurrentBundle()",
+    "RiotService.getUserData()",
+    "RiotService.getAllSkins()",
+    "RiotService.getAllPurchasableSkins()",
+    "RiotService.getUserOwnedItems()",
+    "RiotService.getPlayerEquipedSkins()",
+    "RiotService.reuathenticateUser()",
+    "RiotService.recheckStore()",
+    "RiotService.recheckNightmarket()",
+    "RiotService.recheckBundle()",
+    "ValstoreProvider.initValstore()",
+    "ValstoreProvider.toggleWishlist(String uuid)",
+    "ValstoreProvider.getBundles()",
+    "ValstoreProvider.getNightMarket()",
+    "ValstoreProvider.getPlayerInfo()",
+    "NotificationService.initialize()",
+    "NotificationService.showInstantNotification()",
+    "NotificationService.showInstantNotificationWithoutPicture()",
+    "FireStoreService.getUserWishlist()",
+    "FireStoreService.addSkinToUserWishlist()",
+    "FireStoreService.removeSkinFromWishlist()"
+  ]
+}
