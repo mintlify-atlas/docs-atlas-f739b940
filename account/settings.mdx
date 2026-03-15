@@ -1,0 +1,107 @@
+---
+title: "Settings"
+description: "Configure notifications, view app info, and manage your account session."
+---
+
+The Settings page lets you control notification preferences, access links related to the project, and sign out of your account. Settings are persisted in `SharedPreferences` and take effect immediately.
+
+## Notifications (Beta)
+
+Three notification toggles are available. Each is backed by a background task registered with the `workmanager` package that checks for updates once per day.
+
+<Info>
+Notifications require device permission. Toggling any notification on for the first time calls `NotificationService.requestPermission()`.
+</Info>
+
+### Wishlist notifications
+
+Sends a notification when a skin from your wishlist appears in your daily shop.
+
+- **SharedPreferences key**: `notify`
+- **Background task tag**: `ValStoreStoreRenewal`
+- **Check frequency**: once per day
+- When enabled, a periodic task is scheduled with an initial delay calculated to fire just after the daily shop reset (midnight UTC + 60 minutes).
+- When disabled, the task is cancelled via `Workmanager().cancelByTag("ValStoreStoreRenewal")`.
+
+### Night market notifications
+
+Sends a notification when the Night Market becomes available on your account.
+
+- **SharedPreferences key**: `notifyNM`
+- **Background task tag**: `NightMarketRenewal`
+- **Check frequency**: once per day
+- A `didNotifyNM` flag (also in `SharedPreferences`) prevents duplicate notifications within the same Night Market window. It resets to `false` when the Night Market is no longer active.
+
+### Bundle notifications
+
+Sends a notification when the featured bundle in the store changes.
+
+- **SharedPreferences key**: `notifyBundle`
+- **Background task tag**: `ValStoreBundleRenewal`
+- When enabled, the current bundle's `dataAssetID` is stored under the key `currentBundle`. On each background check, the stored ID is compared to the live bundle. A notification fires only when the ID changes.
+
+<Warning>
+Background task scheduling and notification delivery depend on the device's battery optimization settings. On some Android devices, background tasks may be deferred or restricted.
+</Warning>
+
+## Links
+
+<CardGroup cols={2}>
+  <Card title="Source code" icon="github" href="https://github.com/z4roc/valstore-mobile">
+    View the open-source code for Valstore on GitHub.
+  </Card>
+  <Card title="Follow on X" icon="x-twitter" href="https://twitter.com/zaroc_dev">
+    Follow the developer \@zaroc\_dev on X (formerly Twitter).
+  </Card>
+</CardGroup>
+
+## About
+
+Valstore is free to use with all features included and is open source. The app was created by **ZAROC#0420** (turbointerl9).
+
+If you find the app useful, you can support development via [Ko-fi](https://ko-fi.com/zaroc).
+
+A link to the [Privacy Policy](https://valostore.zaroc.de/privacy) is available at the bottom of the Settings page.
+
+**Current version**: ValStore 2.0.4
+
+## Sync delay calculation
+
+All background notification tasks use the same initial delay formula to align with the Valorant daily shop reset:
+
+```dart
+int getDelayForSync() {
+  DateTime date = DateTime.now();
+  date.toUtc();
+  final tomorrow = DateTime.utc(date.year, date.month, date.day + 1);
+  return tomorrow.difference(date).inMinutes + 60;
+}
+```
+
+This schedules the first check approximately 60 minutes after midnight UTC — just after the shop has refreshed.
+
+## Sign out
+
+Sign out is available from the **Dashboard** tab of the Account screen (not the Settings page). Tapping **Sign out** shows a confirmation dialog. On confirmation, Valstore:
+
+1. Cancels all registered background tasks via `Workmanager().cancelAll()`.
+2. Deletes all WebView cookies via `CookieManager().deleteAllCookies()`.
+3. Clears all `SharedPreferences` data.
+4. Signs out of Firebase Authentication if a Firebase user session is active.
+5. Navigates back to the root route and clears the navigation stack.
+
+<Warning>
+Signing out clears all locally stored session data, including your saved region and notification preferences. You will need to log in again and reconfigure your settings.
+</Warning>
+
+## SharedPreferences keys reference
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `region` | `String` | Player's Riot region (e.g. `eu`, `na`, `ap`, `kr`) |
+| `notify` | `bool` | Wishlist notification toggle |
+| `notifyNM` | `bool` | Night Market notification toggle |
+| `notifyBundle` | `bool` | Bundle notification toggle |
+| `didNotifyNM` | `bool` | Whether the Night Market notification has already been sent this cycle |
+| `currentBundle` | `String` | `dataAssetID` of the last known featured bundle |
+| `cookie` | `String` | Serialized Riot auth cookies used for re-authentication |

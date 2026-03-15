@@ -1,0 +1,111 @@
+---
+title: "Contributing"
+description: "Guidelines for contributing to Valstore, key areas for improvement, and project credits."
+---
+
+<Note>
+  The original Valstore repository (`ruzbyte/valstore-mobile`) is archived. The maintainer is not actively merging pull requests. Forks are welcome — see the GitHub repository for the current status.
+</Note>
+
+## Forking and branching
+
+<Steps>
+  <Step title="Fork the repository">
+    Click **Fork** on [github.com/ruzbyte/valstore-mobile](https://github.com/ruzbyte/valstore-mobile) to create your own copy.
+  </Step>
+  <Step title="Clone your fork">
+    ```bash
+    git clone https://github.com/<your-username>/valstore-mobile.git
+    cd valstore-mobile
+    flutter pub get
+    ```
+  </Step>
+  <Step title="Create a feature branch">
+    ```bash
+    git checkout -b feature/my-feature
+    ```
+
+    Use descriptive branch names: `feature/accessory-store`, `fix/night-market-crash`, `chore/update-firebase`.
+  </Step>
+  <Step title="Make your changes">
+    Follow the code style guidelines below. Keep commits focused on a single concern.
+  </Step>
+  <Step title="Submit a pull request">
+    Push your branch and open a pull request against the original repository (or your fork's main branch if working independently). Include a description of what changed and why.
+  </Step>
+</Steps>
+
+---
+
+## Code style
+
+Valstore follows standard Dart/Flutter conventions enforced by `package:flutter_lints`:
+
+- Run `flutter analyze` before submitting. No new lint violations should be introduced.
+- Run `dart format lib/` to auto-format all Dart files.
+- Use `const` constructors wherever possible.
+- Avoid `print()` in non-debug paths; use `if (kDebugMode) { log(...); }` instead (as seen in `riot_service.dart`).
+- Model classes should implement `fromJson` / `toJson` manually — the project does not use code generation.
+
+---
+
+## Key areas for contribution
+
+<CardGroup cols={2}>
+  <Card title="iOS support" icon="apple">
+    Valstore targets Android. iOS support exists in the notification and WebView code (`DarwinInitializationSettings`, `DarwinNotificationDetails`) but has not been officially released. Testing and fixing iOS-specific issues is a high-value contribution.
+  </Card>
+  <Card title="New store features" icon="store">
+    The Valorant store contains accessory offers (sprays, gun buddies, player cards, titles) in the `AccessoryStore` section of the storefront response. The Firestore service has partial support (`getSkinsById`) but the UI is incomplete.
+  </Card>
+  <Card title="UI improvements" icon="paintbrush">
+    The app uses Material 3 with a custom dark theme. Contributions to improve layout consistency, add animations, or improve accessibility are welcome.
+  </Card>
+  <Card title="API change fixes" icon="wrench">
+    Riot occasionally changes PD API response shapes or authentication behaviour. Bug reports and fixes for broken endpoints are the most immediately useful contributions.
+  </Card>
+</CardGroup>
+
+---
+
+## Adding a new screen
+
+1. Create a new file under the appropriate `lib/` subfolder (e.g. `lib/shops/new_screen.dart`).
+2. Add a route entry to `lib/routes.dart`:
+   ```dart
+   '/new-screen': (context) => const NewScreen(),
+   ```
+3. Access `ValstoreProvider` via `context.read<ValstoreProvider>()` for one-off calls or `context.watch<ValstoreProvider>()` for reactive rebuilds.
+4. If the screen requires new API data, add a method to `RiotService` and expose it through `ValstoreProvider`.
+
+---
+
+## Adding a new background task
+
+1. Add a new `case` branch to `callbackDispatcher` in `main.dart`:
+   ```dart
+   case "MyNewTask":
+     await RiotService.myNewCheck();
+     break;
+   ```
+2. Implement `RiotService.myNewCheck()` as a static method. It must re-authenticate first via `reuathenticateUser()` since the app process may be cold-started.
+3. Register the periodic task via `Workmanager().registerPeriodicTask(...)` from the app after login.
+
+---
+
+## Running tests
+
+```bash
+flutter test
+```
+
+The project currently has minimal test coverage. Unit tests for model `fromJson`/`toJson` methods and service logic are good starting points for new test contributions.
+
+---
+
+## Credits
+
+| Contributor | Contribution |
+|---|---|
+| [Not0fficer](https://github.com/Not0fficer) | [valorant-api.com](https://valorant-api.com) — the community API that provides all skin and bundle metadata used by Valstore |
+| [techchrism](https://github.com/techchrism) | [valorant-api-docs](https://github.com/techchrism/valorant-api-docs) — reverse-engineered documentation of the Riot PD API endpoints |

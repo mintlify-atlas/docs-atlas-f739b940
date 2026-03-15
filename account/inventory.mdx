@@ -1,0 +1,86 @@
+---
+title: "Inventory"
+description: "Browse all weapon skins you own across your Valorant account."
+---
+
+The Inventory page shows every weapon skin you have unlocked on your account. Valstore fetches your entitlements directly from the Riot API and cross-references them with skin metadata from valorant-api.com to display names and preview images.
+
+## How it works
+
+When you open the Inventory tab, `RiotService.getUserOwnedItems()` is called. It:
+
+1. Requests your owned entitlements from the Riot PVP API filtered to the weapon skins item type.
+2. Fetches all skin definitions from valorant-api.com.
+3. Matches each entitlement UUID against the first level UUID of every skin, then returns the resolved `Data` objects.
+
+```dart
+static Future<List<Data?>?> getUserOwnedItems() async {
+  final inventoryRequest = await get(
+    Uri.parse(
+        "https://pd.$region.a.pvp.net/store/v1/entitlements/$userId/${itemTypes['skins']}"),
+    headers: {
+      'Content-Type': 'application/json',
+      "X-Riot-Entitlements-JWT": entitlements,
+      "Authorization": "Bearer $accessToken",
+      ...platformHeaders,
+    },
+  );
+  // ...
+}
+```
+
+## API endpoint
+
+```
+GET https://pd.{region}.a.pvp.net/store/v1/entitlements/{userId}/{itemTypeId}
+```
+
+| Parameter | Value |
+|-----------|-------|
+| `region` | Player's region (e.g. `eu`, `na`, `ap`, `kr`) |
+| `userId` | Player PUUID decoded from the access token |
+| `itemTypeId` | `e7c63390-eda7-46e0-bb7a-a6abdacd2433` (weapon skins) |
+
+<Info>
+The item type UUID `e7c63390-eda7-46e0-bb7a-a6abdacd2433` identifies the weapon skins entitlement category. Other item types (agents, sprays, cards, etc.) use different UUIDs defined in `RiotService.itemTypes`.
+</Info>
+
+## Data model
+
+### Inventory response
+
+The raw API response is parsed into the `Inventory` model:
+
+```dart
+class Inventory {
+  String? itemTypeID;       // e7c63390-eda7-46e0-bb7a-a6abdacd2433
+  List<Entitlements>? entitlements;
+}
+
+class Entitlements {
+  String? typeID;   // entitlement type
+  String? itemID;   // skin level UUID — matched against ValApiSkins
+}
+```
+
+### Resolved skin data
+
+Each matched skin is a `Data` entry from `ValApiSkins`. The inventory list uses:
+
+| Field | Description |
+|-------|-------------|
+| `displayName` | Full skin name shown in the list tile |
+| `levels[0].displayIcon` | Preview image URL |
+| `levels[0].uuid` | Level UUID used for entitlement matching and Firestore lookup |
+
+## Skin detail
+
+Tapping a skin in the inventory opens the `SkinDetailPage`. Before navigating, Valstore looks up the skin in Firestore via `FireStoreService().getSkin(skin.levels![0].uuid!)`. If no Firestore record exists, the navigation is skipped.
+
+<Note>
+Inventory data is fetched fresh each time the tab is opened. There is no local cache for owned items.
+</Note>
+
+## Loading state
+
+While `getUserOwnedItems()` is resolving, the list renders 10 placeholder skeleton tiles using `BasicItemLoader`. Once data arrives, the real skin tiles replace them.

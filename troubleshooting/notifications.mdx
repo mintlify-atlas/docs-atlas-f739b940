@@ -1,0 +1,123 @@
+---
+title: "Notification issues"
+description: "Fix missing, delayed, or duplicate notifications for shop alerts and Night Market updates."
+---
+
+<AccordionGroup>
+  <Accordion title="No notifications on battery-saving devices (Xiaomi, OPPO, etc.)">
+    Some manufacturers aggressively kill background processes to extend battery life. This prevents Valstore's background tasks from running and delivering notifications.
+
+    **On Xiaomi devices:**
+
+    <Steps>
+      <Step title="Open App Info">
+        Hold the Valstore app icon and tap **App Info**.
+      </Step>
+      <Step title="Open Battery saver settings">
+        Tap **Battery saver**.
+      </Step>
+      <Step title="Remove restrictions">
+        Select **No restrictions**.
+      </Step>
+    </Steps>
+
+    **On other Android devices (OPPO, Realme, Samsung, etc.):**
+
+    <Steps>
+      <Step title="Open battery or power settings">
+        Go to your device **Settings** and find **Battery**, **Power**, or **App power management**.
+      </Step>
+      <Step title="Find Valstore">
+        Locate Valstore in the list of apps.
+      </Step>
+      <Step title="Remove restrictions">
+        Set the power mode to **No restrictions**, **Unrestricted**, or **Allow background activity** — the exact label varies by manufacturer.
+      </Step>
+    </Steps>
+
+    <Warning>
+      Without this change, background tasks scheduled via `Workmanager` will be terminated by the OS before they can check your store or send alerts.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="No notifications after device restart">
+    On some Android devices, background processes are not automatically restarted after a reboot unless the app has been granted **Autostart** permission.
+
+    **Steps to resolve:**
+
+    <Steps>
+      <Step title="Open phone settings">
+        Go to **Settings** on your device.
+      </Step>
+      <Step title="Find Autostart settings">
+        Search for **Autostart**, **Auto-launch**, or **Background app launch** — the location varies by manufacturer.
+      </Step>
+      <Step title="Enable Autostart for Valstore">
+        Toggle Autostart **on** for Valstore.
+      </Step>
+    </Steps>
+
+    <Info>
+      This setting is common on Xiaomi (MIUI), OPPO (ColorOS), and Huawei (EMUI) devices. Stock Android typically does not require this step.
+    </Info>
+  </Accordion>
+
+  <Accordion title="Notifications are delayed">
+    Valstore uses `Workmanager` to schedule periodic background tasks (`ValStoreStoreRenewal`, `NightMarketRenewal`, `ValStoreBundleRenewal`). Android does not guarantee exact execution times for background work — the OS batches and defers tasks based on device state, battery level, and Doze mode.
+
+    Some delay in notifications is expected. If notifications are consistently arriving many hours late:
+
+    - Confirm that battery restrictions have been lifted (see the section above).
+    - Ensure the device is connected to Wi-Fi or mobile data when you expect the check to run.
+
+    <Note>
+      Android's `Workmanager` respects system-imposed constraints. There is no way to guarantee precise delivery times from within the app.
+    </Note>
+  </Accordion>
+
+  <Accordion title="No notification for a wishlisted skin">
+    When `RiotService.recheckStore()` runs, it fetches your store and compares each skin's `offerId` against your Firebase wishlist. A notification is only sent if there is a match.
+
+    If you are not receiving wishlist notifications:
+
+    1. **Verify the wishlist is saved.** Open the Gallery, find the skin, and confirm it is marked as wishlisted. The wishlist is synced to Firebase — if you logged in on a new device, it may need a moment to sync.
+    2. **Check notification permission.** On first launch, Valstore calls `AndroidFlutterLocalNotificationsPlugin.requestNotificationsPermission()`. If you denied the prompt, go to **Settings > Apps > Valstore > Notifications** and enable it.
+    3. **Check battery restrictions.** Background tasks must be able to run for the store check to happen. See the battery-saving device section above.
+  </Accordion>
+
+  <Accordion title="Notification permission not granted">
+    Valstore requests notification permission during app startup via `NotificationService.requestPermission()`. If this was denied, the app cannot display any notifications.
+
+    **Steps to resolve:**
+
+    <Steps>
+      <Step title="Open device settings">
+        Go to **Settings > Apps** on your device.
+      </Step>
+      <Step title="Find Valstore">
+        Tap **Valstore** in the app list.
+      </Step>
+      <Step title="Enable notifications">
+        Tap **Notifications** and turn on **Allow notifications**.
+      </Step>
+    </Steps>
+
+    <Note>
+      Android 13 (API 33) and above require explicit notification permission. On earlier Android versions, permission is granted by default at install time.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Night Market notification not appearing">
+    To prevent duplicate Night Market alerts, Valstore stores a `"didNotifyNM"` boolean in `SharedPreferences`. Once a Night Market notification has been sent, this flag is set to `true` and no further alerts are dispatched until the Night Market ends and a new one begins.
+
+    If you are not seeing the Night Market notification:
+
+    - Confirm the Night Market is actually active in your region.
+    - If you previously received a notification but cleared your app data, the flag was reset. You will receive a fresh alert on the next background check.
+    - If you believe the notification was never sent and the Night Market is active, check that background tasks are not being killed (see the battery-saving device section above).
+
+    <Info>
+      When the Night Market ends, `recheckNightmarket()` resets `"didNotifyNM"` to `false` so that the next Night Market event triggers a fresh notification.
+    </Info>
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,85 @@
+---
+title: "Night Market"
+description: "Browse six discounted weapon skins during the periodic Valorant Night Market event, with per-skin discount percentages shown inline."
+---
+
+The Night Market is a limited-time Valorant event where six skins are offered to you at a reduced VP price. Each player receives a different set of skins, and the discounts vary per skin.
+
+## Availability
+
+The Night Market is not always active. When it is unavailable, the tab shows a placeholder message with a link to follow leaks for upcoming events:
+
+```
+There is currently no Night Market
+```
+
+When Riot does not include a `BonusStore` key in your storefront response, `RiotService.getNightMarket()` returns `null`, and `ValstoreProvider.getNightMarket()` returns `false`. The UI falls back to the `noNightMarket()` widget.
+
+## Data model
+
+`RiotService.getNightMarket()` fetches from the same storefront endpoint as the player shop:
+
+```
+POST https://pd.{region}.a.pvp.net/store/v3/storefront/{uuid}
+```
+
+It reads the `BonusStore` key from the response and parses it into:
+
+```dart
+class NightMarket {
+  int? durationRemain;          // seconds until the Night Market closes
+  List<NightMarketSkin?>? skins;
+}
+
+class NightMarketSkin {
+  FirebaseSkin? skinData;       // full skin metadata
+  int? percentageReduced;       // discount as an integer (e.g. 30 for 30%)
+  int? reducedCost;             // computed: cost * percentageReduced / 100
+}
+```
+
+The `reducedCost` is calculated automatically in the `NightMarketSkin` constructor:
+
+```dart
+reducedCost = (skinData!.cost! * percentageReduced! / 100).round();
+```
+
+## Skin card layout
+
+Each of the six Night Market skin cards shows:
+
+- Skin name
+- Content tier icon (top-right)
+- Skin display image
+- Original VP cost with a strikethrough
+- Discounted VP cost in red
+- Discount percentage in parentheses, e.g. `(-30%)`
+
+The card gradient uses the same content-tier colour system as the Player Shop. Tapping a card opens the `SkinDetailPage` for that skin.
+
+## Timer
+
+When the Night Market is active, a `NightMarketTimer` widget appears in the top bar showing the remaining time formatted as:
+
+```
+{days} Days {hours}h {min}m
+```
+
+The countdown is driven by `NightMarket.durationRemain` converted to a target timestamp.
+
+## Notifications
+
+The `recheckNightmarket()` background task (triggered by the `NightMarketRenewal` workmanager task) polls the storefront once. If a Night Market is found and the user has not already been notified (checked via `SharedPreferences` key `didNotifyNM`), it fires:
+
+```dart
+NotificationService.showInstantNotificationWithoutPicture(
+  "Night market is back!",
+  "The Night Market is available again.",
+);
+```
+
+Once sent, the `didNotifyNM` preference is set to `true` so the notification is not repeated. It resets to `false` when the Night Market ends.
+
+<Info>
+  Follow <a href="https://twitter.com/ValorLeaks">@ValorLeaks on X (Twitter)</a> for early announcements about upcoming Night Market events. The app surfaces this link directly on the inactive Night Market screen.
+</Info>

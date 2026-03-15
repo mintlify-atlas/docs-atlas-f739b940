@@ -1,0 +1,165 @@
+---
+title: "valorant-api.com integration"
+description: "How Valstore uses the community valorant-api.com API to fetch skin data, bundle info, and player assets."
+---
+
+Valstore relies on [valorant-api.com](https://valorant-api.com) (maintained by Not0fficer) as its primary source of game content metadata — skin names, icons, level/chroma details, bundle display data, and level border imagery. This is a free community API with no authentication required.
+
+<Info>
+  Requests to valorant-api.com are made by both `RiotService` (static class) and `InofficialValorantAPI` (instance class). Neither caches responses beyond the in-process lifetime of `playerShop` and `playerLoadout`.
+</Info>
+
+---
+
+## Endpoints used
+
+### GET /v1/weapons/skins
+
+```http
+GET https://valorant-api.com/v1/weapons/skins
+```
+
+Fetches all weapon skins in the game. Called by `RiotService.getAllSkins()` and `RiotService.getAllPurchasableSkins()`. This is the most heavily used endpoint — it is called on every store load, bundle load, night market load, and inventory load.
+
+**Response model: `ValApiSkins`**
+
+```json
+{
+  "status": 200,
+  "data": [
+    {
+      "uuid": "skin-uuid",
+      "displayName": "Reaver Vandal",
+      "displayIcon": "https://media.valorant-api.com/...",
+      "themeUuid": "...",
+      "contentTierUuid": "...",
+      "levels": [
+        {
+          "uuid": "level-uuid",
+          "displayName": "Reaver Vandal",
+          "levelItem": null,
+          "displayIcon": "https://media.valorant-api.com/weaponskinlevels/level-uuid/displayicon.png",
+          "streamedVideo": "https://..."
+        }
+      ],
+      "chromas": [
+        {
+          "uuid": "chroma-uuid",
+          "displayName": "Reaver Vandal (Default)",
+          "displayIcon": "https://media.valorant-api.com/weaponskinchromas/...",
+          "fullRender": "https://...",
+          "swatch": "https://...",
+          "streamedVideo": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Key mapping to Riot API:**
+- `Data.levels[0].uuid` ≡ Riot's `OfferID` in `SingleItemStoreOffers` and `BonusStoreOffers`
+- `Data.uuid` ≡ `SkinID` in the player loadout (`Guns.skinID`)
+
+---
+
+### GET /v1/bundles/{bundleId}
+
+```http
+GET https://valorant-api.com/v1/bundles/{bundleId}
+```
+
+Fetches display data for a featured bundle. Called by `RiotService.getCurrentBundle()` and `RiotService.recheckBundle()`. The `bundleId` is `Bundle.dataAssetID` from the Riot storefront response.
+
+**Response** (relevant fields):
+
+```json
+{
+  "status": 200,
+  "data": {
+    "uuid": "bundle-uuid",
+    "displayName": "Reaver",
+    "displayIcon": "https://media.valorant-api.com/bundles/bundle-uuid/displayicon.png",
+    "displayIcon2": "https://...",
+    "verticalPromoImage": "https://..."
+  }
+}
+```
+
+Mapped to `ValApiBundle` model. The `displayName` is used in bundle renewal notifications.
+
+---
+
+### GET /v1/version
+
+```http
+GET https://valorant-api.com/v1/version
+```
+
+Called by `InofficialValorantAPI().getCurrentVersion()`. Returns the `data` object:
+
+```json
+{
+  "status": 200,
+  "data": {
+    "manifestId": "...",
+    "branch": "release-09.09",
+    "version": "09.09.00.2953160",
+    "buildVersion": "2953160",
+    "engineVersion": "...",
+    "riotClientVersion": "release-09.09-shipping-11-2953160",
+    "riotClientBuild": "...",
+    "buildDate": "2026-03-10T00:00:00Z"
+  }
+}
+```
+
+`data.riotClientVersion` is written to `RiotService.platformHeaders["X-Riot-ClientVersion"]` at app startup and during re-authentication.
+
+---
+
+### GET /v1/levelborders
+
+```http
+GET https://valorant-api.com/v1/levelborders
+```
+
+Called by `InofficialValorantAPI().getLevelBorders()`. Returns a list of `LevelBorder` objects. Valstore uses this to find the level border image for the player's current account level:
+
+```dart
+final levelBorder = (await InofficialValorantAPI().getLevelBorders())
+    .borders
+    ?.where((element) => info.accountLevel! < element.startingLevel!)
+    .first;
+```
+
+The first border whose `startingLevel` exceeds the player's current level is selected as the displayed border.
+
+---
+
+### Additional InofficialValorantAPI endpoints
+
+| Method | URL | Used for |
+|---|---|---|
+| `getSprays()` | `GET /v1/sprays` | Accessory store item resolution |
+| `getPlayercards()` | `GET /v1/playercards` | Accessory store item resolution |
+| `getPlayerTitles()` | `GET /v1/playertitles` | Accessory store item resolution |
+| `getSkinById(id)` | `GET /v1/weapons/{id}` | Individual weapon data lookup |
+| All four above combined | — | `getAllDisplayableItems()` for accessory store |
+
+---
+
+## Media URLs
+
+All image and video assets are served from `https://media.valorant-api.com`. Valstore constructs these URLs directly using known UUIDs:
+
+| Asset | URL pattern |
+|---|---|
+| Skin level icon | `https://media.valorant-api.com/weaponskinlevels/{levelId}/displayicon.png` |
+| Bundle display icon | `https://media.valorant-api.com/bundles/{bundleId}/displayicon.png` |
+| Player card (small) | `https://media.valorant-api.com/playercards/{cardId}/smallart.png` |
+| Player card (wide) | `https://media.valorant-api.com/playercards/{cardId}/wideart.png` |
+| Player card (large) | `https://media.valorant-api.com/playercards/{cardId}/largeart.png` |
+| Content tier icon | `https://media.valorant-api.com/contenttiers/{tierId}/displayicon.png` |
+
+Images are loaded in the UI via `cached_network_image` for automatic disk caching.

@@ -1,0 +1,92 @@
+---
+title: "Bundles"
+description: "View currently featured weapon bundles in the Valorant store, including all included skins with individual prices and a bundle countdown timer."
+---
+
+The Bundles tab shows every weapon bundle that is currently available for purchase as a set. Each bundle includes artwork, the total VP cost, a countdown until it expires, and all individual skins listed beneath it.
+
+## How bundles are fetched
+
+`RiotService.getCurrentBundle()` retrieves bundle data from two sources and combines them:
+
+<Steps>
+  <Step title="Fetch the storefront">
+    Calls `getUserOffers()` to POST to the Riot storefront endpoint and reads the `FeaturedBundle.Bundles` array.
+  </Step>
+  <Step title="Resolve bundle metadata">
+    For each bundle, GETs the display name and artwork from valorant-api.com:
+
+    ```
+    GET https://valorant-api.com/v1/bundles/{bundleId}
+    ```
+  </Step>
+  <Step title="Resolve included skins">
+    Matches each `ItemOffer` in the bundle against the full skin catalogue to build a `List<FirebaseSkin>` with per-skin names, icons, and prices.
+  </Step>
+  <Step title="Return display data">
+    Returns a `List<BundleDisplayData?>` stored in `ValstoreProvider` and accessed via `ValstoreProvider.getBundles()`.
+  </Step>
+</Steps>
+
+## Data model
+
+```dart
+class BundleDisplayData {
+  ValApiBundle? bundleData; // display name, artwork from valorant-api.com
+  sf.Bundle? data;          // Riot storefront data (cost, timer, items)
+  List<FirebaseSkin>? skins; // resolved individual skins
+}
+```
+
+Bundle artwork is loaded from:
+
+```
+https://media.valorant-api.com/bundles/{bundleId}/displayicon.png
+```
+
+## Bundle card layout
+
+Each bundle renders as two sections stacked vertically:
+
+**Header card**
+- Bundle artwork as a background image (60% opacity)
+- Bundle display name
+- Total VP cost with the Valorant Points icon
+- Countdown timer (`CountdownTimer`) driven by `Bundle.durationRemainingInSeconds`
+
+**Skin list**
+One `BundleItemTile` per skin, showing:
+- Skin name
+- Content tier icon
+- Skin display image
+- Individual VP cost
+
+Skin tiles use the same content-tier colour gradient system as the Player Shop. Items with a `basePrice` below 875 VP (such as gun buddies or sprays) are filtered out and only weapon skins are displayed.
+
+## Content tier colours
+
+Bundle skin prices map to the same tier colours used across the app:
+
+| Price | Colour |
+|---|---|
+| 875 VP | `#5b9cdd` (Select) |
+| 1275 VP | `#28bda7` (Deluxe) |
+| 1775 VP | `#cb558d` (Premium) |
+| 2175 VP | `#fd9257` (Exclusive) |
+| 2475+ VP | `#eed878` (Ultra) |
+
+## Notifications
+
+The `ValStoreBundleRenewal` background task calls `RiotService.recheckBundle()`. This compares the stored bundle ID in `SharedPreferences` (`currentBundle` key) with the current featured bundle. If they differ, the new bundle ID is saved and a notification with the bundle artwork is sent:
+
+```dart
+NotificationService.showInstantNotification(
+  "New Bundle Available!",
+  "The $bundleName Bundle is now available for purchase",
+  bundleImage.bodyBytes,
+);
+```
+
+<Note>
+  Multiple bundles can be active at the same time. The UI renders all of them in a scrollable list, one after the other.
+</Note>

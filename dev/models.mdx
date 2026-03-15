@@ -1,0 +1,273 @@
+---
+title: "Data models"
+description: "Dart model classes used throughout Valstore for skins, shop state, player info, and loadout data."
+---
+
+All model classes live under `lib/models/`. They are plain Dart objects with `fromJson`/`toJson` methods; no code generation is used.
+
+---
+
+## Skin models
+
+### FirebaseSkin
+
+`lib/models/firebase_skin.dart`
+
+The primary skin representation used throughout the UI, constructed from both Riot API and valorant-api.com data.
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `String?` | Display name of the skin |
+| `offerId` | `String?` | UUID of the skin's level 0 — used as the Riot offer ID and Firestore document ID |
+| `skinId` | `String?` | UUID of the parent skin (matches `Data.uuid` from ValApiSkins) |
+| `cost` | `int?` | Price in Valorant Points |
+| `icon` | `String?` | URL to the skin's display icon |
+| `contentTier` | `ContentTier?` | Rarity tier metadata (colour + icon) |
+| `levels` | `List<Levels>?` | Skin level variants from valorant-api.com |
+| `chromas` | `List<Chromas>?` | Chroma colour variants from valorant-api.com |
+
+Firestore serialisation keys: `name`, `offer_id`, `skin_id`, `cost`, `icon`, `content_tier`, `levels`, `chromas`.
+
+### ContentTier
+
+Rarity tier derived from skin cost in `RiotService.getContentTierByCost(int cost)`.
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `String?` | Tier name (optional, not always populated) |
+| `color` | `String?` | Hex colour string (e.g. `"eed878"` for Exclusive/Premium) |
+| `icon` | `String?` | `media.valorant-api.com` URL to the tier's display icon |
+
+Cost → tier mapping:
+
+| Cost (VP) | Colour | Tier |
+|---|---|---|
+| 875 | `5b9cdd` | Select |
+| 1275 | `28bda7` | Deluxe |
+| 1775 | `cb558d` | Premium |
+| 2175 | `fd9257` | Ultra |
+| 2475 | `eed878` | Exclusive |
+| > 2475 and < 4950 | `fd9257` | Ultra |
+| ≥ 4950 | `eed878` | Exclusive |
+
+---
+
+## Shop models
+
+### PlayerShop
+
+`lib/models/firebase_skin.dart`
+
+| Field | Type | Description |
+|---|---|---|
+| `storeRemaining` | `int?` | Seconds until the daily shop resets |
+| `skins` | `List<FirebaseSkin>` | The four daily skin offers |
+| `lastUpdated` | `DateTime` | Timestamp used for the 1-hour in-memory cache check |
+
+### NightMarket
+
+`lib/models/store_models.dart` (via `BonusStore`)
+
+Constructed in `RiotService.getNightMarket()`.
+
+| Field | Type | Description |
+|---|---|---|
+| `durationRemain` | `int` | `BonusStoreRemainingDurationInSeconds` from the Riot API |
+| `skins` | `List<NightMarketSkin>` | Discounted skin offers |
+
+### NightMarketSkin
+
+| Field | Type | Description |
+|---|---|---|
+| `skinData` | `FirebaseSkin` | Full skin metadata |
+| `percentageReduced` | `int` | Discount percentage (from `BonusStoreOffers.discountPercent`) |
+
+---
+
+## Storefront models
+
+### Storefront
+
+`lib/models/storefront.dart`
+
+Direct mapping of the Riot PD API `POST /store/v3/storefront/{uuid}` response.
+
+| Field | Type |
+|---|---|
+| `featuredBundle` | `FeaturedBundle?` |
+| `skinsPanelLayout` | `SkinsPanelLayout?` |
+| `upgradeCurrencyStore` | `UpgradeCurrencyStore?` |
+| `accessoryStore` | `AccessoryStore?` |
+
+### SkinsPanelLayout
+
+| Field | Type | Description |
+|---|---|---|
+| `singleItemOffers` | `List<String>` | List of offer UUIDs currently in the daily shop |
+| `singleItemStoreOffers` | `List<SingleItemStoreOffer>` | Full offer details including `cost` map |
+| `singleItemOffersRemainingDurationInSeconds` | `int` | Seconds until next shop reset |
+
+### SingleItemStoreOffer
+
+| Field | Type | Description |
+|---|---|---|
+| `offerID` | `String` | Matches `Levels[0].uuid` from valorant-api.com |
+| `isDirectPurchase` | `bool` | Whether the item can be bought directly |
+| `startDate` | `String` | ISO 8601 offer start date |
+| `cost` | `Map<String, int>` | Currency UUID → price mapping |
+| `rewards` | `List<Reward>` | Items granted on purchase |
+
+---
+
+## Player models
+
+### Player
+
+`lib/models/player.dart`
+
+| Field | Type |
+|---|---|
+| `playerInfo` | `PlayerInfo?` |
+| `wallet` | `Wallet?` |
+| `levelBorder` | `LevelBorder?` |
+
+### PlayerInfo
+
+| Field | Type | Description |
+|---|---|---|
+| `puuid` | `String?` | Riot PUUID (also used as Firestore user document ID) |
+| `region` | `String?` | Two-letter region code |
+| `accountLevel` | `int?` | Player account level |
+| `name` | `String?` | In-game name (`GameName`) |
+| `tag` | `String?` | Tag line (`TagLine`) |
+| `card` | `Card?` | Player card art URLs |
+
+### Card
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `String?` | Player card UUID |
+| `small` | `String?` | `media.valorant-api.com/playercards/{id}/smallart.png` |
+| `wide` | `String?` | `media.valorant-api.com/playercards/{id}/wideart.png` |
+| `large` | `String?` | `media.valorant-api.com/playercards/{id}/largeart.png` |
+
+Default card (used when `playerCardID` is all-zeros): `9fb348bc-41a0-91ad-8a3e-818035c4e561`.
+
+### Wallet
+
+| Field | Type | Currency UUID |
+|---|---|---|
+| `valorantPoints` | `int?` | `85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741` |
+| `radianitePoints` | `int?` | `e59aa87c-4cbf-517a-5983-6e81511be9b7` |
+| `freeAgents` | `int?` | `f08d4ae3-939c-4576-ab26-09ce1f23bb37` |
+| `kingdomCredits` | `int?` | `85ca954a-41f2-ce94-9b45-8ca3dd39a00d` |
+
+---
+
+## Loadout models
+
+`lib/models/loadout.dart`
+
+### Loadout
+
+| Field | Type | Description |
+|---|---|---|
+| `subject` | `String?` | Player PUUID |
+| `version` | `int?` | Loadout version number |
+| `guns` | `List<Guns>?` | Per-weapon skin assignments |
+| `sprays` | `List<Sprays>?` | Equipped sprays |
+| `identity` | `Identity?` | Player card, title, and level border |
+| `incognito` | `bool?` | Whether the player is in incognito mode |
+
+### Guns
+
+| Field | Type | Description |
+|---|---|---|
+| `iD` | `String?` | Weapon UUID |
+| `skinID` | `String?` | Equipped skin UUID (matches `Data.uuid` from ValApiSkins) |
+| `skinLevelID` | `String?` | Equipped skin level UUID |
+| `chromaID` | `String?` | Equipped chroma UUID |
+| `attachments` | `List<Attachment>?` | Weapon attachments |
+
+### Identity
+
+| Field | Type | Description |
+|---|---|---|
+| `playerCardID` | `String?` | Equipped player card UUID |
+| `playerTitleID` | `String?` | Equipped player title UUID |
+| `accountLevel` | `int?` | Account level from loadout |
+| `preferredLevelBorderID` | `String?` | Preferred level border UUID |
+| `hideAccountLevel` | `bool?` | Whether to hide the level on the card |
+
+### PlayerLoadoutItem
+
+A combined view model pairing a gun slot with its resolved skin metadata.
+
+| Field | Type |
+|---|---|
+| `gun` | `Guns?` |
+| `skin` | `FirebaseSkin?` |
+
+---
+
+## ValApiSkins models
+
+`lib/models/val_api_skins.dart`
+
+Direct mapping of the `GET https://valorant-api.com/v1/weapons/skins` response.
+
+### ValApiSkins
+
+| Field | Type |
+|---|---|
+| `status` | `int?` |
+| `data` | `List<Data>?` |
+
+### Data
+
+| Field | Type | Description |
+|---|---|---|
+| `uuid` | `String?` | Skin UUID — used as `skinId` in `FirebaseSkin` |
+| `displayName` | `String?` | Skin display name |
+| `displayIcon` | `String?` | Primary display icon URL |
+| `contentTierUuid` | `String?` | Content tier UUID from valorant-api.com |
+| `levels` | `List<Levels>?` | Skin level variants |
+| `chromas` | `List<Chromas>?` | Chroma colour variants |
+
+### Levels
+
+| Field | Type | Description |
+|---|---|---|
+| `uuid` | `String?` | Level UUID — used as the Riot offer ID (`offerId`) |
+| `displayName` | `String?` | Level display name |
+| `displayIcon` | `String?` | Level-specific icon URL |
+| `levelItem` | `String?` | Effect/animation type |
+| `streamedVideo` | `String?` | Preview video URL |
+
+### Chromas
+
+| Field | Type | Description |
+|---|---|---|
+| `uuid` | `String?` | Chroma UUID |
+| `displayName` | `String?` | Chroma display name |
+| `displayIcon` | `String?` | Chroma-specific icon URL |
+| `fullRender` | `String?` | Full-resolution chroma render |
+| `swatch` | `String?` | Small colour swatch URL |
+| `streamedVideo` | `String?` | Preview video URL |
+
+---
+
+## App state model
+
+### Valstore
+
+`lib/models/valstore.dart`
+
+The root aggregate held in `ValstoreProvider._instance`.
+
+| Field | Type |
+|---|---|
+| `player` | `Player?` |
+| `playerShop` | `PlayerShop?` |
+| `bundles` | `List<BundleDisplayData?>?` |
+| `nightMarket` | `NightMarket?` |

@@ -1,0 +1,93 @@
+---
+title: "Common issues"
+description: "Solutions for the most frequently encountered problems in Valstore."
+---
+
+<AccordionGroup>
+  <Accordion title="Long load times or infinite loading state">
+    Slow or stalled loading is usually caused by a temporary network hiccup or stale cached state.
+
+    **Steps to resolve:**
+
+    1. Force-close the app and reopen it.
+    2. If the issue persists, go to your device's **App settings** for Valstore and tap **Clear data**.
+    3. Log in again.
+
+    <Note>
+      Loading skin assets (images, icons) takes additional time on slow internet connections. This is expected behavior — the app fetches artwork directly from Riot's CDN.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Login fails or token expired">
+    Valstore authenticates by replaying stored cookies against Riot's auth endpoint (`reuathenticateUser`). If those cookies have expired or been invalidated, the login attempt will fail silently or loop.
+
+    **Steps to resolve:**
+
+    1. Log out of the app from the **Settings** screen.
+    2. Log back in with your Riot account credentials.
+    3. If the problem persists, clear the app's data (this removes the stored `cookie` key from `SharedPreferences`) and log in fresh.
+
+    <Warning>
+      Clearing app data removes all locally stored session information. You will need to log in again and re-select your region.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Shop not updating">
+    Your Valorant daily shop rotates approximately every 24 hours. Valstore also caches the current store in memory for up to 1 hour to avoid redundant API calls.
+
+    If the shop appears stale:
+
+    - Wait for the in-app countdown timer to reach zero — the shop will refresh at the next rotation.
+    - If you recently started the app after a long gap, force-close and reopen to clear the in-memory cache. The next load will fetch a fresh store from Riot's API.
+
+    <Info>
+      The cache check is controlled by `RiotService.getStore()`: if `playerShop.lastUpdated` is less than 1 hour ago, the cached result is returned without a new network request.
+    </Info>
+  </Accordion>
+
+  <Accordion title="Night Market not showing">
+    The Night Market is a periodic Riot event. It is not always active.
+
+    When `RiotService.getNightMarket()` receives a storefront response where `bonusStore` is `null`, it returns `null` and the Night Market tab is hidden. This means the event is currently inactive — not a bug.
+
+    Check [playvalorant.com](https://playvalorant.com) or community sources to confirm whether a Night Market event is live in your region.
+  </Accordion>
+
+  <Accordion title="Authentication expired">
+    Valstore re-authenticates silently on each session using cookies stored under the `cookie` key in `SharedPreferences`. If Riot invalidates those cookies (for example, after a password change or a long period of inactivity), silent re-auth will fail.
+
+    **Steps to resolve:**
+
+    1. Log out from **Settings**.
+    2. Log back in. A fresh browser session will store new valid cookies.
+    3. If you want to fully reset the session, clear the app's data from your device's app settings. This forces a complete re-login on next launch.
+  </Accordion>
+
+  <Accordion title="App crash on startup">
+    Valstore initializes Firebase during `main()` before the UI renders. If Firebase cannot initialize — most commonly because `google-services.json` is missing or misconfigured in the build — the app will crash immediately on launch.
+
+    **If you are running your own build:**
+
+    1. Ensure `google-services.json` is placed in `android/app/`.
+    2. Verify the package name in `google-services.json` matches `applicationId` in `android/app/build.gradle`.
+    3. Rebuild the app with `flutter build apk`.
+
+    <Note>
+      Pre-built releases from the repository include a configured Firebase project. This issue only applies to custom builds.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Region not found or wrong region">
+    Your region is stored as the `"region"` key in `SharedPreferences`. If it is missing or set incorrectly, API requests will target the wrong server and may fail or return unexpected data.
+
+    **Steps to resolve:**
+
+    1. Open **Settings** in the app.
+    2. Re-select your Valorant region (EU, NA, AP, KR, etc.).
+    3. Restart the app to apply the change.
+
+    <Tip>
+      If your region was never set, `RiotService` falls back to `"eu"` as a default. Make sure to set the correct region after logging in.
+    </Tip>
+  </Accordion>
+</AccordionGroup>

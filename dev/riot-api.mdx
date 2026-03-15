@@ -1,0 +1,354 @@
+---
+title: "Riot API integration"
+description: "Unofficial Riot PD API endpoints used by Valstore, authentication flow, and required request headers."
+---
+
+<Warning>
+  Valstore uses Riot's internal Player Data (PD) API, which is not publicly documented or officially supported. Riot may change or deprecate these endpoints at any time without notice. Use at your own risk. This is not affiliated with or endorsed by Riot Games.
+</Warning>
+
+## Base URLs
+
+| Base | Purpose |
+|---|---|
+| `https://auth.riotgames.com` | SSO authentication and re-authentication |
+| `https://entitlements.auth.riotgames.com` | Entitlements JWT exchange |
+| `https://pd.{region}.a.pvp.net` | Player Data endpoints (shop, wallet, loadout, XP) |
+
+Replace `{region}` with a two-letter region code: `na`, `eu`, `ap`, `kr`, `latam`, `br`.
+
+---
+
+## Authentication flow
+
+Valstore uses a WebView-based SSO login. The flow is:
+
+<Steps>
+  <Step title="Open Riot login URL in WebView">
+    `WebViewPage` loads the following URL in `flutter_inappwebview`:
+
+    ```
+    https://auth.riotgames.com/authorize
+      ?redirect_uri=https%3A%2F%2Fplayvalorant.com%2Fopt_in
+      &client_id=play-valorant-web-prod
+      &response_type=token%20id_token
+      &nonce=1
+      &scope=account%20openid
+    ```
+  </Step>
+  <Step title="Intercept the redirect">
+    After a successful login Riot redirects to `https://playvalorant.com/opt_in#access_token=...`. The WebView intercepts this redirect and extracts the access token from the URI fragment.
+  </Step>
+  <Step title="Save cookies">
+    `RiotService.saveCookies()` reads all cookies from `https://auth.riotgames.com/login` via `CookieManager.instance()` and persists them to `SharedPreferences` under the key `cookie`. These cookies are required for silent re-authentication.
+  </Step>
+  <Step title="Exchange for entitlements JWT">
+    `RiotService.getEntitlements()` posts to `entitlements.auth.riotgames.com` with the access token to obtain the `entitlements_token`.
+  </Step>
+  <Step title="Decode user ID">
+    `RiotService.getUserId()` decodes the `sub` claim from the access token JWT to obtain the player PUUID.
+  </Step>
+</Steps>
+
+### Silent re-authentication
+
+Background tasks and session refresh use `RiotService.reuathenticateUser()`:
+
+```http
+POST https://auth.riotgames.com/api/v1/authorization
+Content-Type: application/json
+User-Agent: RiotClient/{version} rso-auth (Windows; 10;;Professional, x64)
+cookie: {saved-cookie-string}
+
+{
+  "client_id": "play-valorant-web-prod",
+  "nonce": "1",
+  "redirect_uri": "https://playvalorant.com/opt_in",
+  "response_type": "token id_token",
+  "response_mode": "query",
+  "scope": "account openid"
+}
+```
+
+The response contains a `response.parameters.uri` field. The new access token is extracted from the fragment of that URI.
+
+---
+
+## Required headers for PD endpoints
+
+Every request to `pd.{region}.a.pvp.net` must include:
+
+```http
+Authorization: Bearer {accessToken}
+X-Riot-Entitlements-JWT: {entitlementsToken}
+X-Riot-ClientVersion: {riotClientVersion}
+X-Riot-ClientPlatform: {base64EncodedPlatformJson}
+```
+
+`X-Riot-ClientPlatform` is the Base64 encoding of:
+
+```json
+{
+  "platformType": "PC",
+  "platformOS": "Windows",
+  "platformOSVersion": "10.0.19042.1.256.64bit",
+  "platformChipset": "Unknown"
+}
+```
+
+`X-Riot-ClientVersion` is fetched at app start from `https://valorant-api.com/v1/version` (`data.riotClientVersion`). Falls back to `"08.09.00.2521387"` if the fetch fails during re-authentication.
+
+---
+
+## Endpoints
+
+### POST /api/v1/authorization
+
+**Re-authentication with cookies**
+
+```http
+POST https://auth.riotgames.com/api/v1/authorization
+```
+
+See [Silent re-authentication](#silent-re-authentication) above for request body and headers.
+
+**Response** (relevant fields):
+
+```json
+{
+  "type": "response",
+  "response": {
+    "mode": "fragment",
+    "parameters": {
+      "uri": "https://playvalorant.com/opt_in#access_token=eyJ...&token_type=Bearer&..."
+    }
+  }
+}
+```
+
+Mapped to `Reauth` model (`lib/models/auth.dart`).
+
+---
+
+### POST /api/token/v1/
+
+**Get entitlements token**
+
+```http
+POST https://entitlements.auth.riotgames.com/api/token/v1/
+Content-Type: application/json
+Authorization: Bearer {accessToken}
+```
+
+**Response** (relevant field):
+
+```json
+{ "entitlements_token": "eyJ..." }
+```
+
+---
+
+### POST /store/v3/storefront/{uuid}
+
+**Get full storefront (daily shop, bundles, night market)**
+
+```http
+POST https://pd.{region}.a.pvp.net/store/v3/storefront/{userId}
+Authorization: Bearer {accessToken}
+X-Riot-Entitlements-JWT: {entitlementsToken}
+X-Riot-ClientVersion: {version}
+X-Riot-ClientPlatform: {base64Platform}
+Content-Type: application/json
+
+{}
+```
+
+**Response** (top-level keys used by Valstore):
+
+```json
+{
+  "FeaturedBundle": { "Bundles": [...], "BundleRemainingDurationInSeconds": 345600 },
+  "SkinsPanelLayout": {
+    "SingleItemOffers": ["uuid1", "uuid2", "uuid3", "uuid4"],
+    "SingleItemStoreOffers": [
+      { "OfferID": "uuid1", "Cost": { "85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741": 1775 }, "Rewards": [...] }
+    ],
+    "SingleItemOffersRemainingDurationInSeconds": 72000
+  },
+  "BonusStore": {
+    "BonusStoreOffers": [
+      { "Offer": { "OfferID": "...", "Cost": {...} }, "DiscountPercent": 20 }
+    ],
+    "BonusStoreRemainingDurationInSeconds": 604800
+  },
+  "AccessoryStore": { ... }
+}
+```
+
+Mapped to `Storefront` (`lib/models/storefront.dart`).
+
+---
+
+### GET /store/v2/offers/
+
+**Get all purchasable offers**
+
+```http
+GET https://pd.{region}.a.pvp.net/store/v2/offers/
+Authorization: Bearer {accessToken}
+X-Riot-Entitlements-JWT: {entitlementsToken}
+X-Riot-ClientVersion: {version}
+X-Riot-ClientPlatform: {base64Platform}
+```
+
+Used by `RiotService.getLocalOffers()` to filter the full skin catalogue down to currently purchasable skins. Mapped to `LocalOffers`.
+
+---
+
+### GET /store/v1/wallet/{userId}
+
+**Get wallet balances**
+
+```http
+GET https://pd.{region}.a.pvp.net/store/v1/wallet/{userId}/
+Authorization: Bearer {accessToken}
+X-Riot-Entitlements-JWT: {entitlementsToken}
+X-Riot-ClientVersion: {version}
+X-Riot-ClientPlatform: {base64Platform}
+```
+
+**Response** (relevant fields):
+
+```json
+{
+  "Balances": {
+    "85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741": 1500,
+    "e59aa87c-4cbf-517a-5983-6e81511be9b7": 200,
+    "f08d4ae3-939c-4576-ab26-09ce1f23bb37": 0,
+    "85ca954a-41f2-ce94-9b45-8ca3dd39a00d": 50
+  }
+}
+```
+
+Keys are the UUIDs from `Currencies` constants. Mapped to `Wallet`.
+
+---
+
+### GET /store/v1/entitlements/{userId}/{itemTypeId}
+
+**Get owned items**
+
+```http
+GET https://pd.{region}.a.pvp.net/store/v1/entitlements/{userId}/{itemTypeId}
+Content-Type: application/json
+Authorization: Bearer {accessToken}
+X-Riot-Entitlements-JWT: {entitlementsToken}
+X-Riot-ClientVersion: {version}
+X-Riot-ClientPlatform: {base64Platform}
+```
+
+`itemTypeId` for weapon skins: `e7c63390-eda7-46e0-bb7a-a6abdacd2433`.
+
+Other item type IDs defined in `itemTypes` map:
+
+| Type | UUID |
+|---|---|
+| agents | `01bb38e1-da47-4e6a-9b3d-945fe4655707` |
+| contracts | `f85cb6f7-33e5-4dc8-b609-ec7212301948` |
+| sprays | `d5f120f8-ff8c-4aac-92ea-f2b5acbe9475` |
+| gun_buddies | `dd3bf334-87f3-40bd-b043-682a57a8dc3a` |
+| cards | `3f296c07-64c3-494c-923b-fe692a4fa1bd` |
+| skins | `e7c63390-eda7-46e0-bb7a-a6abdacd2433` |
+| skin_variants | `3ad1b2b2-acdb-4524-852f-954a76ddae0a` |
+| titles | `de7caa6b-adf7-4588-bbd1-143831e786c6` |
+
+Mapped to `Inventory` model. Each entitlement's `ItemID` is cross-referenced against `ValApiSkins` to produce `Data` objects.
+
+---
+
+### PUT /name-service/v2/players
+
+**Resolve player name and tag**
+
+```http
+PUT https://pd.{region}.a.pvp.net/name-service/v2/players
+Content-Type: application/json
+Authorization: Bearer {accessToken}
+X-Riot-Entitlements-JWT: {entitlementsToken}
+X-Riot-ClientVersion: {version}
+X-Riot-ClientPlatform: {base64Platform}
+
+["player-puuid"]
+```
+
+**Response**:
+
+```json
+[
+  {
+    "DisplayName": "PlayerName#TAG",
+    "Subject": "player-puuid",
+    "GameName": "PlayerName",
+    "TagLine": "TAG"
+  }
+]
+```
+
+---
+
+### GET /account-xp/v1/players/{userId}
+
+**Get player XP and account level**
+
+```http
+GET https://pd.{region}.a.pvp.net/account-xp/v1/players/{userId}
+Authorization: Bearer {accessToken}
+X-Riot-Entitlements-JWT: {entitlementsToken}
+X-Riot-ClientVersion: {version}
+X-Riot-ClientPlatform: {base64Platform}
+```
+
+**Response** (relevant fields):
+
+```json
+{
+  "Subject": "player-puuid",
+  "Progress": { "Level": 142, "XP": 4500 }
+}
+```
+
+Mapped to `PlayerXP` model. `progress.level` is used as `PlayerInfo.accountLevel`.
+
+---
+
+### GET /personalization/v2/players/{userId}/playerloadout
+
+**Get equipped skins and identity**
+
+```http
+GET https://pd.{region}.a.pvp.net/personalization/v2/players/{userId}/playerloadout
+Authorization: Bearer {accessToken}
+X-Riot-Entitlements-JWT: {entitlementsToken}
+X-Riot-ClientVersion: {version}
+X-Riot-ClientPlatform: {base64Platform}
+```
+
+**Response** (relevant fields):
+
+```json
+{
+  "Subject": "player-puuid",
+  "Guns": [
+    { "ID": "weapon-uuid", "SkinID": "skin-uuid", "SkinLevelID": "level-uuid", "ChromaID": "chroma-uuid" }
+  ],
+  "Identity": {
+    "PlayerCardID": "card-uuid",
+    "PlayerTitleID": "title-uuid",
+    "AccountLevel": 142,
+    "PreferredLevelBorderID": "border-uuid",
+    "HideAccountLevel": false
+  }
+}
+```
+
+Mapped to `Loadout` model (`lib/models/loadout.dart`).

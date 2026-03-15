@@ -1,0 +1,201 @@
+---
+title: "Loadout"
+description: "See which skin is currently equipped on each weapon in your Valorant loadout."
+---
+
+The Loadout page shows your active weapon skin selection — one skin per gun — exactly as it is set in the game. Each card displays the skin name, its content tier icon, and a full chroma render fetched from valorant-api.com.
+
+## How it works
+
+`RiotService.getPlayerEquipedSkins()` builds the loadout list:
+
+1. If `playerLoadout` is already cached in memory, it returns it immediately.
+2. Otherwise, it fetches the raw loadout from the Riot PVP API.
+3. For each gun, it tries to find the skin in Firestore by `skinID`. If there is no Firestore record, it falls back to the valorant-api.com skin list.
+4. The resolved pairs are stored in `playerLoadout` and returned as `List<PlayerLoadoutItem>`.
+
+```dart
+static Future<List<PlayerLoadoutItem>> getPlayerEquipedSkins() async {
+  if (playerLoadout != null) {
+    return playerLoadout!;
+  }
+
+  final loadout = await getPlayerLadout();
+  final allSkins = await getAllSkins();
+
+  List<PlayerLoadoutItem> skins = [];
+
+  for (var item in loadout.guns ?? <Guns>[]) {
+    final fbSkin = await FireStoreService().getSkinBySkinId(item.skinID ?? "");
+    // falls back to allSkins if fbSkin is null
+    skins.add(PlayerLoadoutItem(gun: item, skin: skin));
+  }
+  playerLoadout = skins;
+  return skins;
+}
+```
+
+## API endpoint
+
+```
+GET https://pd.{region}.a.pvp.net/personalization/v2/players/{userId}/playerloadout
+```
+
+Required headers:
+
+| Header | Value |
+|--------|-------|
+| `X-Riot-Entitlements-JWT` | Entitlements token |
+| `Authorization` | `Bearer {accessToken}` |
+| `X-Riot-ClientVersion` | Current client version string |
+| `X-Riot-ClientPlatform` | Base64-encoded platform JSON |
+
+## Data models
+
+### Loadout
+
+The raw API response maps to the `Loadout` model:
+
+```dart
+class Loadout {
+  String? subject;           // player PUUID
+  int? version;
+  List<Guns>? guns;          // one entry per equipped weapon
+  List<Sprays>? sprays;
+  Identity? identity;
+  bool? incognito;
+}
+```
+
+### Guns
+
+Each entry in `guns` describes the skin equipped on one weapon:
+
+```dart
+class Guns {
+  String? iD;            // weapon slot ID
+  String? skinID;        // skin UUID
+  String? skinLevelID;   // selected level UUID
+  String? chromaID;      // selected chroma UUID
+  List<Attachment>? attachments;
+}
+```
+
+### Identity
+
+The `Identity` object carries the player's cosmetic identity settings:
+
+```dart
+class Identity {
+  String? playerCardID;            // UUID of the equipped player card
+  String? playerTitleID;           // UUID of the equipped player title
+  int? accountLevel;               // account level stored in the loadout
+  String? preferredLevelBorderID;  // UUID of the selected level border
+  bool? hideAccountLevel;          // whether the level is hidden in-game
+}
+```
+
+### PlayerLoadoutItem
+
+The list returned to the UI pairs each `Guns` entry with a resolved `FirebaseSkin`:
+
+```dart
+class PlayerLoadoutItem {
+  FirebaseSkin? skin;   // resolved skin metadata (name, icon, contentTier)
+  Guns? gun;            // raw loadout entry with chromaID, skinID, etc.
+}
+```
+
+## Chroma render URL
+
+The card renders the skin image using the equipped chroma:
+
+```
+https://media.valorant-api.com/weaponskinchromas/{chromaID}/fullrender.png
+```
+
+The `chromaID` comes from `gun.chromaID` on the `Guns` object.
+
+## Player card URLs
+
+The player card shown on the Account dashboard is built from `Identity.playerCardID` using these URL patterns:
+
+| Size | URL |
+|------|-----|
+| Small | `https://media.valorant-api.com/playercards/{cardId}/smallart.png` |
+| Wide | `https://media.valorant-api.com/playercards/{cardId}/wideart.png` |
+| Large | `https://media.valorant-api.com/playercards/{cardId}/largeart.png` |
+
+<Note>
+If `playerCardID` is `00000000-0000-0000-0000-000000000000`, Valstore substitutes the default card UUID `9fb348bc-41a0-91ad-8a3e-818035c4e561`.
+</Note>
+
+## Content tier colors
+
+Each loadout card is tinted using the skin's content tier color. The gradient is derived from the hex color value on `FirebaseSkin.contentTier.color`, blending from a darkened variant on the left to the full color on the right.
+
+## Player and wallet model
+
+The Account dashboard (the **Dashboard** tab within the Account screen) displays player info and wallet balances. This data is fetched by `RiotService.getUserData()` and stored in the `Player` model.
+
+### Player
+
+```dart
+class Player {
+  PlayerInfo? playerInfo;    // name, tag, PUUID, region, level, card URLs
+  Wallet? wallet;            // currency balances
+  LevelBorder? levelBorder;  // border art for the current account level
+}
+```
+
+### PlayerInfo
+
+```dart
+class PlayerInfo {
+  String? puuid;         // player UUID
+  String? region;        // e.g. "eu", "na", "ap", "kr"
+  int? accountLevel;
+  String? name;          // in-game name (GameName)
+  String? tag;           // tagline (TagLine)
+  Card? card;            // player card art URLs
+}
+```
+
+### Card
+
+```dart
+class Card {
+  String? small;   // smallart.png URL
+  String? large;   // largeart.png URL
+  String? wide;    // wideart.png URL
+  String? id;      // player card UUID
+}
+```
+
+### Wallet
+
+Currency balances are fetched from `https://pd.{region}.a.pvp.net/store/v1/wallet/{userId}/`.
+
+```dart
+class Wallet {
+  int? valorantPoints;
+  int? radianitePoints;
+  int? freeAgents;
+  int? kingdomCredits;
+}
+```
+
+Each balance is keyed by a currency UUID defined in `RiotService.Currencies`:
+
+| Currency | UUID |
+|----------|------|
+| Valorant Points | `85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741` |
+| Radianite Points | `e59aa87c-4cbf-517a-5983-6e81511be9b7` |
+| Free Agents | `f08d4ae3-939c-4576-ab26-09ce1f23bb37` |
+| Kingdom Credits | `85ca954a-41f2-ce94-9b45-8ca3dd39a00d` |
+
+The currency icon for each balance is served from:
+
+```
+https://media.valorant-api.com/currencies/{currencyUUID}/displayicon.png
+```

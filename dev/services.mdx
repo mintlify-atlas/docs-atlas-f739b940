@@ -1,0 +1,191 @@
+---
+title: "Services"
+description: "API and utility service classes in Valstore: RiotService, FireStoreService, NotificationService, and InofficialValorantAPI."
+---
+
+Valstore's service layer is responsible for all network communication, data persistence, and device notifications. Each service is either a static utility class or a plain Dart class with no constructor dependencies.
+
+---
+
+## RiotService
+
+`lib/services/riot_service.dart`
+
+A fully static class. All Riot API calls, token management, and store-parsing logic live here.
+
+### Static state
+
+| Field | Type | Description |
+|---|---|---|
+| `accessToken` | `String` | Bearer token extracted from the Riot SSO redirect URI |
+| `entitlements` | `String` | Entitlements JWT from `entitlements.auth.riotgames.com` |
+| `userId` | `String` | Player PUUID decoded from the JWT |
+| `region` | `String?` | Two-letter region code (e.g. `eu`, `na`, `ap`) |
+| `playerShop` | `PlayerShop?` | In-memory cache of the current daily shop |
+| `nightMarket` | `NightMarket?` | In-memory cache of the current Night Market |
+| `userOffers` | `Storefront?` | Raw storefront response from the Riot PD API |
+| `playerLoadout` | `List<PlayerLoadoutItem>?` | Cached equipped skin list |
+| `authCookies` | `List<Cookie>?` | Riot auth cookies captured from the WebView |
+
+### Platform headers
+
+Every request to `pd.{region}.a.pvp.net` must include:
+
+```dart
+static Map<dynamic, String> clientPlatform = {
+  "platformType": "PC",
+  "platformOS": "Windows",
+  "platformOSVersion": "10.0.19042.1.256.64bit",
+  "platformChipset": "Unknown",
+};
+
+static Map<dynamic, String> platformHeaders = {
+  "X-Riot-ClientVersion": "release-09.09-shipping-11-2953160",
+  "X-Riot-ClientPlatform":
+      const Base64Encoder().convert(utf8.encode(jsonEncode(clientPlatform))),
+};
+```
+
+`X-Riot-ClientVersion` is overwritten at startup with the live value fetched from `InofficialValorantAPI().getCurrentVersion()`.
+
+### Currency UUID constants
+
+```dart
+class Currencies {
+  static const String valorantPoints = "85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741";
+  static const String radianitePoints = "e59aa87c-4cbf-517a-5983-6e81511be9b7";
+  static const String freeAgents = "f08d4ae3-939c-4576-ab26-09ce1f23bb37";
+  static const String kingdomCredits = "85ca954a-41f2-ce94-9b45-8ca3dd39a00d";
+}
+```
+
+### Methods
+
+<AccordionGroup>
+  <Accordion title="getStore() → Future<PlayerShop>">
+    Fetches the player's daily shop. Results are cached in `playerShop`; if the cache is less than 1 hour old it is returned immediately without a network call.
+
+    Internally calls `getUserOffers()` and `getAllSkins()`, then cross-references each `SingleItemStoreOffer.offerID` against `ValApiSkins` data. Builds `FirebaseSkin` objects with `contentTier` derived from cost via `getContentTierByCost()`. Each skin is written to Firestore via `FireStoreService().registerSkin()`.
+  </Accordion>
+  <Accordion title="getNightMarket() → Future<NightMarket?>">
+    Returns `null` if no Night Market (`BonusStore`) is present in the storefront response. Otherwise, parses `BonusStoreOffers` into `NightMarketSkin` objects with `discountPercent` and the full `FirebaseSkin` data.
+  </Accordion>
+  <Accordion title="getCurrentBundle() → Future<List<BundleDisplayData?>>">
+    Iterates `FeaturedBundle.bundles`, fetches bundle display data from `https://valorant-api.com/v1/bundles/{dataAssetID}`, and pairs each bundle's `ItemOffer` list with matching `ValApiSkins` entries to produce a `BundleDisplayData` list.
+  </Accordion>
+  <Accordion title="getUserData() → Future<Player>">
+    Combines three API calls:
+    1. `PUT /name-service/v2/players` — resolves `GameName` and `TagLine`
+    2. `GET /store/v1/wallet/{userId}` — fetches `Wallet` balances
+    3. `GET /account-xp/v1/players/{userId}` — fetches account level
+
+    Also fetches the player loadout to resolve the equipped player card UUID, then constructs `media.valorant-api.com` URLs for `small`, `wide`, and `large` card art. Falls back to a default card UUID (`9fb348bc-41a0-91ad-8a3e-818035c4e561`) if the player card is unset.
+  </Accordion>
+  <Accordion title="getAllSkins() → Future<ValApiSkins?>">
+    `GET https://valorant-api.com/v1/weapons/skins` — fetches all weapon skins from the community API. No caching; called on every store load.
+  </Accordion>
+  <Accordion title="getAllPurchasableSkins() → Future<ValApiSkins?>">
+    Filters `getAllSkins()` down to only skins that have a matching offer in `getLocalOffers()` (i.e. skins currently listed in `GET /store/v2/offers/`).
+  </Accordion>
+  <Accordion title="getUserOwnedItems() → Future<List<Data?>?>">
+    `GET /store/v1/entitlements/{userId}/{itemTypeId}` using the `skins` item type UUID (`e7c63390-eda7-46e0-bb7a-a6abdacd2433`). Maps each entitlement's `itemID` back to a `Data` entry from `getAllSkins()`.
+  </Accordion>
+  <Accordion title="getPlayerEquipedSkins() → Future<List<PlayerLoadoutItem>>">
+    Fetches the player's current loadout via `getPlayerLadout()`, then resolves each `Guns.skinID` to a `FirebaseSkin` — first by checking Firestore (`getSkinBySkinId`), then by falling back to `getAllSkins()` data. Results are cached in `playerLoadout`.
+  </Accordion>
+  <Accordion title="reuathenticateUser() → Future<void>">
+    Re-authenticates silently using saved cookies (from `SharedPreferences` or `CookieManager`). Posts to `https://auth.riotgames.com/api/v1/authorization`, extracts the new access token from the redirect URI fragment, then calls `getEntitlements()` and `getUserId()` to refresh the session.
+  </Accordion>
+  <Accordion title="recheckStore / recheckNightmarket / recheckBundle">
+    Background task methods called by Workmanager's `callbackDispatcher`:
+    - `recheckStore()` — re-auths, fetches shop, notifies for wishlisted skins
+    - `recheckNightmarket()` — notifies once when Night Market opens
+    - `recheckBundle()` — notifies when the featured bundle changes
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## NotificationService
+
+`lib/services/notifcation_service.dart`
+
+A static wrapper around `flutter_local_notifications`.
+
+### Methods
+
+<AccordionGroup>
+  <Accordion title="initialize() → Future<void>">
+    Sets up `AndroidInitializationSettings` (launcher icon: `@mipmap/launcher_icon`) and `DarwinInitializationSettings` for iOS. Registers `onDidReceiveNotificationResponse` as the tap handler.
+  </Accordion>
+  <Accordion title="showInstantNotification(title, body, imageBytes) → Future<void>">
+    Shows a rich notification using `BigPictureStyleInformation` on Android (displays the skin icon as a large image). Falls back silently if `imageBytes` is `null`.
+
+    - Channel ID: `instant_notification`
+    - Channel name: `Instant Notification`
+    - Importance: `Importance.max`, Priority: `Priority.high`
+    - Notification ID: random int 0–99 (`Random().nextInt(100)`)
+  </Accordion>
+  <Accordion title="showInstantNotificationWithoutPicture(title, body) → Future<void>">
+    Same channel settings as above but without `BigPictureStyleInformation`. Used for Night Market arrival notifications where no image is available.
+  </Accordion>
+  <Accordion title="requestPermission() → Future<void>">
+    Requests the `POST_NOTIFICATIONS` permission on Android via `AndroidFlutterLocalNotificationsPlugin.requestNotificationsPermission()`. Skips the request if there are already pending notifications.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## FireStoreService
+
+`lib/services/firestore_service.dart`
+
+Wraps all Cloud Firestore operations. Instantiated normally (`FireStoreService()`); holds a private `FirebaseFirestore _db` reference.
+
+### Methods
+
+<AccordionGroup>
+  <Accordion title="getSkin(uuid) → Future<FirebaseSkin?>">
+    Looks up a skin document in the `skins` collection by its `offerId` (the document ID). Returns `null` if the document does not exist.
+  </Accordion>
+  <Accordion title="getSkinBySkinId(skinId) → Future<FirebaseSkin?>">
+    Queries `skins` where `skin_id == skinId`. Returns the first matching document or `null`.
+  </Accordion>
+  <Accordion title="registerSkin(skin) → Future<FirebaseSkin>">
+    Upserts a skin document into the `skins` collection. Resolves the canonical `offerId` (level 0 UUID) and full `levels`/`chromas` data from `RiotService.getAllSkins()` before writing. Document ID is the skin's `offerId`.
+  </Accordion>
+  <Accordion title="getUserWishlist(uuid) → Future<List<String>>">
+    Reads the `wishlist` array field from `users/{uuid}`. Returns an empty list if the user document does not exist.
+  </Accordion>
+  <Accordion title="addSkinToUserWishlist(uuid, offerId) → Future<void>">
+    Appends `offerId` to the `wishlist` array in `users/{uuid}` using `FieldValue.arrayUnion`.
+  </Accordion>
+  <Accordion title="removeSkinFromWishlist(userId, uuid) → Future<void>">
+    Removes `uuid` from the `wishlist` array in `users/{userId}` using `FieldValue.arrayRemove`.
+  </Accordion>
+  <Accordion title="registerUser(uuid) → Future<void>">
+    Creates a `users/{uuid}` document with an empty `wishlist` if it does not already exist.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## InofficialValorantAPI
+
+`lib/services/inofficial_valorant_api.dart`
+
+A plain Dart class (not static) wrapping the public `valorant-api.com` REST API.
+
+### Methods
+
+| Method | URL | Return type |
+|---|---|---|
+| `getCurrentVersion()` | `GET https://valorant-api.com/v1/version` | `dynamic` (map with `riotClientVersion`, `version`, etc.) |
+| `getLevelBorders()` | `GET https://valorant-api.com/v1/levelborders` | `LevelBorders` |
+| `getSkinById(id)` | `GET https://valorant-api.com/v1/weapons/{id}` | `Map` |
+| `getSprays()` | `GET https://valorant-api.com/v1/sprays` | `Sprays` |
+| `getPlayercards()` | `GET https://valorant-api.com/v1/playercards` | `Playercards` |
+| `getPlayerTitles()` | `GET https://valorant-api.com/v1/playertitles` | `PlayerTitles` |
+| `getAllDisplayableItems()` | Multiple endpoints | `List<DisplayableItem>` |
+
+`getCurrentVersion()` returns the `data` object from the API response. The `riotClientVersion` field is used directly in the `X-Riot-ClientVersion` platform header.

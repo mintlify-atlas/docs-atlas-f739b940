@@ -1,0 +1,78 @@
+---
+title: "Skin Gallery"
+description: "Browse every purchasable weapon skin in Valorant, filter by name, view skin details, video previews, and chroma variants."
+---
+
+The Skin Gallery lets you browse the complete catalogue of weapon skins that can be purchased with Valorant Points. It is available as the last tab in the main navigation bar.
+
+## Skin data source
+
+`RiotService.getAllSkins()` fetches the full skin list from valorant-api.com:
+
+```
+GET https://valorant-api.com/v1/weapons/skins
+```
+
+The response is parsed into `ValApiSkins`. To limit the gallery to purchasable skins only (excluding default/free skins), `RiotService.getAllPurchasableSkins()` cross-references this list against the store offers from the Riot API:
+
+```dart
+static Future<ValApiSkins?> getAllPurchasableSkins() async {
+  ValApiSkins? allSkins = await getAllSkins();
+  final allOffers = await getLocalOffers();
+
+  allSkins?.data = allSkins.data
+      ?.where((skin) =>
+          allOffers.offers
+              ?.any((offer) => skin.levels?[0].uuid == offer.offerID) ??
+          false)
+      .toList();
+
+  return allSkins;
+}
+```
+
+Local offers come from:
+
+```
+GET https://pd.{region}.a.pvp.net/store/v2/offers/
+```
+
+## Browsing skins
+
+The gallery renders as a scrollable `ListView` sorted alphabetically by `displayName`. Each row shows:
+
+- Skin display icon (50 × 30 logical pixels)
+- Skin name
+- A star icon button to toggle the skin on/off the wishlist
+
+The star is yellow when the skin is wishlisted (`Icons.star`) and white when it is not (`Icons.star_border`). Tapping the star calls `ValstoreProvider.toggleWishlist(uuid)`.
+
+## Skin detail view
+
+Tapping a row opens `SkinDetailPage`. On first open, the app looks up the skin in Firebase Firestore via `FireStoreService().getSkin(levelUuid)`. If the skin is not yet registered, a `FirebaseSkin` is constructed from the valorant-api.com data and the local offer price, then registered via `FireStoreService().registerFullSkin(fbSkin)`.
+
+The detail view includes:
+
+- Video preview — played with `chewie` / `video_player` if `levels[n].streamedVideo` is present
+- Chroma variants — swatch thumbnails that swap the displayed skin
+- Content tier badge and colour theming
+
+## Search
+
+A search icon in the top bar (visible only on the Gallery tab) opens the `SkinSearchDelegate`. Results are filtered in real time by a case-insensitive `contains` match on the skin's `displayName`.
+
+```dart
+element.displayName!.toLowerCase().trim().contains(
+  query.toLowerCase().trim(),
+)
+```
+
+Search results support the same tap-to-detail and wishlist-toggle behaviour as the main list.
+
+## Wishlist shortcut
+
+A star icon in the top bar navigates directly to `FavoritesPage`, which shows only the skins currently on your wishlist.
+
+<Tip>
+  Use the search feature to quickly find a specific skin and add it to your wishlist so you get notified when it appears in your daily shop.
+</Tip>

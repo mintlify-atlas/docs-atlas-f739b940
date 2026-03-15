@@ -1,0 +1,89 @@
+---
+title: "Wishlist"
+description: "Save skins to your wishlist and receive a push notification the moment one appears in your daily Player Shop rotation."
+---
+
+The Wishlist lets you track skins you want to buy. When the background task checks your shop and finds a wishlisted skin, it fires a push notification immediately.
+
+## Adding and removing skins
+
+Any skin in the Gallery or the Player Shop can be wishlisted. The toggle is a star icon (`Icons.star` / `Icons.star_border`) on each skin row or card.
+
+Toggling calls `ValstoreProvider.toggleWishlist(uuid)`, which:
+
+1. Checks if the skin's offer UUID is already in the local `_skins` list.
+2. If present, calls `FireStoreService().removeSkinFromWishlist(userId, uuid)` and removes it locally.
+3. If absent, calls `FireStoreService().addSkinToUserWishlist(userId, uuid)` and adds it locally.
+4. Calls `notifyListeners()` so all widgets showing a star icon update immediately.
+
+```dart
+void toggleWishlist(String uuid) {
+  final isWished = _skins.contains(uuid);
+
+  if (isWished) {
+    FireStoreService()
+        .removeSkinFromWishlist(RiotService.userId, uuid)
+        .then((value) => null);
+    _skins.remove(uuid);
+  } else {
+    FireStoreService()
+        .addSkinToUserWishlist(RiotService.userId, uuid)
+        .then((value) => null);
+    _skins.add(uuid);
+  }
+  notifyListeners();
+}
+```
+
+To check whether a skin is currently wishlisted:
+
+```dart
+bool isInWishlist(String uuid) => _skins.contains(uuid);
+```
+
+## Storage
+
+The wishlist is stored in Firebase Firestore, keyed to the player's Riot PUUID (`RiotService.userId`). The relevant `FireStoreService` methods are:
+
+| Method | Description |
+|---|---|
+| `getUserWishlist(userId)` | Returns a `List<String>` of offer UUIDs |
+| `addSkinToUserWishlist(userId, uuid)` | Adds a single UUID to Firestore |
+| `removeSkinFromWishlist(userId, uuid)` | Removes a single UUID from Firestore |
+
+On app startup, `ValstoreProvider.initWishlist()` populates the local `_skins` list from Firestore so the star states are correct when the UI first renders.
+
+## Wishlist view
+
+The `FavoritesPage` (accessible via the star icon in the Gallery top bar) shows all skins currently on your wishlist. It loads the full skin catalogue with `RiotService.getAllSkins()` and filters it to only the UUIDs present in `ValstoreProvider.skins`:
+
+```dart
+final skinsOnWishlist = (snapshot.data?.data ?? [])
+    .where(
+      (element) => wished.contains(element.levels?[0].uuid),
+    )
+    .toList();
+```
+
+The wishlist view also includes a search bar to find and add skins without leaving the page.
+
+## Shop notification
+
+When the `ValStoreStoreRenewal` background task runs, `RiotService.recheckStore()` compares each skin in your current daily shop against your Firestore wishlist. For any match, it downloads the skin icon and triggers a notification with the image attached:
+
+```dart
+for (var element in store.skins) {
+  if (wishlist.contains(element.offerId)) {
+    final imageReq = await get(Uri.parse(element.icon!));
+    await NotificationService.showInstantNotification(
+      "Skin arrived!",
+      "${element.name} is available in your shop",
+      imageReq.bodyBytes,
+    );
+  }
+}
+```
+
+<Info>
+  The wishlist uses the skin's offer UUID (the `levels[0].uuid` from valorant-api.com), not the skin's own UUID. This is the same ID used in the Riot storefront API, ensuring reliable matching.
+</Info>

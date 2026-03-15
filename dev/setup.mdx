@@ -1,0 +1,151 @@
+---
+title: "Development setup"
+description: "How to set up your local environment to build and run Valstore."
+---
+
+## Prerequisites
+
+<CardGroup cols={2}>
+  <Card title="Flutter SDK" icon="mobile">
+    Version `^3.4.1` (Dart SDK `^3.4.1`). Install from [flutter.dev](https://flutter.dev/docs/get-started/install).
+  </Card>
+  <Card title="Android Studio or VS Code" icon="code">
+    Android Studio is recommended for Android emulator management. VS Code with the Flutter extension also works; `.vscode/` config is included in the repository.
+  </Card>
+  <Card title="Git" icon="code-branch">
+    Required to clone the repository and the `workmanager` git dependency.
+  </Card>
+  <Card title="Firebase CLI (optional)" icon="fire">
+    Required only if you need to regenerate `lib/firebase_options.dart`. Install with `npm install -g firebase-tools`.
+  </Card>
+</CardGroup>
+
+---
+
+## Clone and install
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/ruzbyte/valstore-mobile.git
+    cd valstore-mobile
+    ```
+  </Step>
+  <Step title="Install Flutter dependencies">
+    ```bash
+    flutter pub get
+    ```
+
+    This resolves all `pubspec.yaml` dependencies including the `workmanager` git dependency (fetched directly from `https://github.com/fluttercommunity/flutter_workmanager.git`).
+  </Step>
+  <Step title="Add Firebase configuration">
+    Valstore requires a Firebase project. See [Firebase integration](/dev/firebase) for full setup instructions. At minimum, add `google-services.json` to `android/app/`:
+
+    ```bash
+    cp /path/to/google-services.json android/app/google-services.json
+    ```
+
+    Without this file the app will crash at startup with a Firebase initialisation error.
+  </Step>
+  <Step title="Connect a device or start an emulator">
+    ```bash
+    flutter devices          # list connected devices
+    flutter emulators        # list available emulators
+    flutter emulators --launch <emulator-id>
+    ```
+  </Step>
+  <Step title="Run in debug mode">
+    ```bash
+    flutter run
+    ```
+
+    The app locks screen orientation to portrait (`DeviceOrientation.portraitUp` / `portraitDown`) on device. This restriction does not apply on web.
+  </Step>
+</Steps>
+
+---
+
+## VS Code
+
+A `.vscode/` directory is included in the repository with launch and settings configuration. Open the project folder directly in VS Code and the Flutter extension will detect the project automatically.
+
+Recommended extensions:
+- [Flutter](https://marketplace.visualstudio.com/items?itemName=Dart-Code.flutter)
+- [Dart](https://marketplace.visualstudio.com/items?itemName=Dart-Code.dart-code)
+
+---
+
+## Common commands
+
+| Task | Command |
+|---|---|
+| Run in debug mode | `flutter run` |
+| Run on a specific device | `flutter run -d <device-id>` |
+| Build release APK | `flutter build apk --release` |
+| Build release AAB | `flutter build appbundle --release` |
+| Run tests | `flutter test` |
+| Static analysis | `flutter analyze` |
+| Format code | `dart format lib/` |
+| Update dependencies | `flutter pub upgrade` |
+
+---
+
+## Linting
+
+The project uses `package:flutter_lints/flutter.yaml` via `analysis_options.yaml`:
+
+```yaml
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # avoid_print: false
+    # prefer_single_quotes: true
+```
+
+Run `flutter analyze` to check for lint violations. The full list of available rules is at [dart.dev/lints](https://dart.dev/tools/linter-rules).
+
+---
+
+## Project structure
+
+```
+lib/
+├── main.dart              # App entry point
+├── routes.dart            # Named route map
+├── theme.dart             # Material 3 theme
+├── valstore_provider.dart # Root ChangeNotifier
+├── firebase_options.dart  # Auto-generated Firebase config
+├── models/                # Dart data classes
+├── services/              # API and utility services
+├── shops/                 # Store / bundle / night market screens
+├── galery/                # Favorites / wishlist screen
+├── account/               # Inventory screen
+├── login/                 # Login, region, WebView screens
+└── settings/              # Settings screen
+assets/
+├── Valstore_Icon.png
+└── playertitle.png
+android/
+└── app/
+    └── google-services.json  # Required — not in repo
+```
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Firebase initialisation crash on startup">
+    Ensure `android/app/google-services.json` exists and the package name in the file matches `android/app/build.gradle`. Re-run `flutter pub get` after adding the file.
+  </Accordion>
+  <Accordion title="workmanager dependency fails to resolve">
+    The `workmanager` package is pulled from a git source. Ensure you have internet access and git is configured. Run `flutter pub get --verbose` to see the fetch progress.
+  </Accordion>
+  <Accordion title="flutter_inappwebview build errors on Android">
+    Ensure `minSdkVersion` in `android/app/build.gradle` is at least `19`. `flutter_inappwebview` requires API level 19+.
+  </Accordion>
+  <Accordion title="Notification icon not showing on Android">
+    `NotificationService` uses `@mipmap/launcher_icon` as the notification icon. Ensure `flutter_launcher_icons` has been run (`flutter pub run flutter_launcher_icons`) to generate the launcher icon assets.
+  </Accordion>
+</AccordionGroup>

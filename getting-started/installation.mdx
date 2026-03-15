@@ -1,0 +1,89 @@
+---
+title: "Installation"
+description: "Build Valstore from source and install it on your Android device."
+---
+
+Valstore is no longer distributed through the Google Play Store. To run the app, you need to build it from the source code and sideload the APK onto your device.
+
+## Prerequisites
+
+Before you start, make sure you have the following installed and configured:
+
+- **Flutter SDK `^3.4.1`** — the Dart SDK is bundled with Flutter. See [flutter.dev/get-started](https://flutter.dev/get-started) for setup instructions.
+- **Android device or emulator** — Valstore targets Android. An emulator from Android Studio works, but a physical device is recommended for testing notifications.
+- **Git** — to clone the repository.
+- **Firebase project with `google-services.json`** — the app requires Firebase for Firestore (wishlist sync) and notifications. See [Firebase setup](#firebase-setup) below.
+
+## Build steps
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the Valstore source code from GitHub:
+
+    ```bash
+    git clone https://github.com/ruzbyte/valstore-mobile.git
+    cd valstore-mobile
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Fetch all Dart and Flutter package dependencies:
+
+    ```bash
+    flutter pub get
+    ```
+  </Step>
+
+  <Step title="Add Firebase configuration">
+    Valstore uses Firebase for wishlist sync and push notifications. You need to provide your own Firebase project credentials.
+
+    1. Create a project in the [Firebase console](https://console.firebase.google.com).
+    2. Register an Android app with the package name `de.zaroc.valstore`.
+    3. Download the `google-services.json` file and place it at:
+
+    ```
+    android/app/google-services.json
+    ```
+
+    <Warning>
+      The app will not compile without `google-services.json`. This file is not included in the repository.
+    </Warning>
+  </Step>
+
+  <Step title="Build the release APK">
+    Compile a release build of the app:
+
+    ```bash
+    flutter build apk --release
+    ```
+
+    The output APK is written to:
+
+    ```
+    build/app/outputs/flutter-apk/app-release.apk
+    ```
+  </Step>
+
+  <Step title="Install on your device">
+    Connect your Android device via USB with USB debugging enabled, then run:
+
+    ```bash
+    flutter install
+    ```
+
+    Alternatively, copy `app-release.apk` to your device and open it to sideload manually. You may need to enable **Install unknown apps** in your Android settings.
+  </Step>
+</Steps>
+
+## Firebase setup
+
+The app initialises Firebase on startup in `lib/main.dart` and will crash if the configuration is missing. If you want a minimal build without Firebase features (wishlist sync, Firestore), you would need to remove the Firebase initialisation and related service calls from the source — this is not officially supported.
+
+For a full build, the Firebase project needs:
+
+- **Cloud Firestore** — stores user wishlists.
+- **Firebase Auth** (optional, used for anonymous sign-in in earlier versions).
+
+## iOS
+
+iOS is not officially supported. The app was developed and tested on Android only. A build may be possible by providing the appropriate Firebase iOS configuration (`GoogleService-Info.plist`) and resolving any platform-specific dependency issues, but this is untested.

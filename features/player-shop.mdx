@@ -1,0 +1,79 @@
+---
+title: "Player Shop"
+description: "View your daily 4-skin rotation fetched directly from Riot's storefront API, with a live countdown timer until the next refresh."
+---
+
+The Player Shop displays the four weapon skins that are currently available for purchase in your personal Valorant store. The selection rotates every ~24 hours and is unique to your account.
+
+## How it works
+
+When you open the Store tab, `RiotService.getStore()` fetches your storefront from the Riot API:
+
+```
+POST https://pd.{region}.a.pvp.net/store/v3/storefront/{uuid}
+```
+
+The response's `SkinsPanelLayout.SingleItemStoreOffers` field contains the four current skin offer IDs. Each offer ID is matched against the full skin catalogue from `valorant-api.com` to resolve the display name, icon, and VP cost. Results are registered in Firebase Firestore via `FireStoreService().registerSkin()` so they can be referenced by the wishlist and notification features.
+
+The result is a `PlayerShop` object:
+
+```dart
+class PlayerShop {
+  int? storeRemaining;       // seconds until the next rotation
+  List<FirebaseSkin> skins;  // the four current skins
+  DateTime lastUpdated;
+}
+```
+
+## Content tiers
+
+Each skin card is colour-coded by its VP cost. `RiotService.getContentTierByCost()` resolves the tier from the offer price:
+
+| Tier | VP cost | Hex colour |
+|---|---|---|
+| Select | 875 | `#5b9cdd` |
+| Deluxe | 1275 | `#28bda7` |
+| Premium | 1775 | `#cb558d` |
+| Exclusive | 2175 | `#fd9257` |
+| Ultra | 2475+ | `#eed878` |
+
+The card background uses a gradient derived from the tier colour, and the tier icon is rendered at low opacity as a watermark in the bottom-left corner.
+
+## Store timer
+
+A `TimerWidget` is displayed in the top bar whenever the Store tab is active. It shows:
+
+- A circular progress indicator that fills relative to the 24-hour cycle (`CirclePaint` custom painter)
+- A live `CountdownTimer` displaying hours, minutes, and seconds remaining
+
+The remaining duration in seconds comes from `PlayerShop.storeRemaining`, which maps directly to `SingleItemOffersRemainingDurationInSeconds` in the API response.
+
+## Navigation
+
+The shop is the first tab in the main bottom navigation bar (`GNav`). The bar has five tabs:
+
+<CardGroup cols={3}>
+  <Card title="Store" icon="shopping-cart">
+    Your daily 4-skin rotation (this page).
+  </Card>
+  <Card title="Accessories" icon="wand-magic-sparkles">
+    Kingdom Credits accessory store.
+  </Card>
+  <Card title="Night Market" icon="cloud-moon">
+    Discounted skins when the event is active.
+  </Card>
+  <Card title="Bundles" icon="layer-group">
+    Currently featured weapon bundles.
+  </Card>
+  <Card title="Gallery" icon="grip">
+    Browse all purchasable skins.
+  </Card>
+</CardGroup>
+
+## Skin detail view
+
+Tapping any skin card navigates to `SkinDetailPage`. If the skin has a `streamedVideo` URL on one of its `levels`, the detail page plays the video preview using the `chewie` / `video_player` package. Chroma variants are also available to browse from the detail view.
+
+<Note>
+  The store is cached in memory for the duration of the app session. Re-opening the app forces a fresh fetch. The cache is intentionally invalidated at startup by setting `RiotService.playerShop = null` inside `ValstoreProvider.initValstore()`.
+</Note>

@@ -1,0 +1,118 @@
+---
+title: "Notifications"
+description: "Valstore sends local push notifications for shop renewals, Night Market arrivals, and new featured bundles using flutter_workmanager and flutter_local_notifications."
+---
+
+Valstore uses background tasks to monitor your store and send local push notifications without requiring the app to be open.
+
+## Notification triggers
+
+<CardGroup cols={1}>
+  <Card title="Wishlisted skin in shop" icon="shopping-cart">
+    Fired when the daily shop rotates and one of your wishlisted skins appears. Includes the skin artwork as an image attachment.
+  </Card>
+  <Card title="Night Market arrival" icon="cloud-moon">
+    Fired once when the Night Market becomes active. Sent without an image.
+  </Card>
+  <Card title="New featured bundle" icon="layer-group">
+    Fired when the featured bundle changes. Includes the bundle artwork as an image attachment.
+  </Card>
+</CardGroup>
+
+## Background tasks
+
+Background processing uses the `workmanager` package. Tasks are registered at app startup:
+
+```dart
+Workmanager().initialize(callbackDispatcher, isInDebugMode: kDebugMode);
+```
+
+The `callbackDispatcher` function dispatches to the appropriate handler based on the task name:
+
+```dart
+Workmanager().executeTask((taskName, inputData) async {
+  switch (taskName) {
+    case "ValStoreStoreRenewal":
+      await RiotService.recheckStore();
+      break;
+    case "NightMarketRenewal":
+      await RiotService.recheckNightmarket();
+      break;
+    case "ValStoreBundleRenewal":
+      await RiotService.recheckBundle();
+      break;
+  }
+  return Future.value(true);
+});
+```
+
+| Task name | Handler | What it does |
+|---|---|---|
+| `ValStoreStoreRenewal` | `RiotService.recheckStore()` | Checks for wishlisted skins in the daily shop |
+| `NightMarketRenewal` | `RiotService.recheckNightmarket()` | Checks if the Night Market has become active |
+| `ValStoreBundleRenewal` | `RiotService.recheckBundle()` | Checks if the featured bundle has changed |
+
+## NotificationService
+
+All notifications are delivered via `NotificationService` which wraps `flutter_local_notifications`.
+
+### Initialisation
+
+`NotificationService.initialize()` is called from `main()` before the app runs. It configures the Android launcher icon and iOS settings:
+
+```dart
+const AndroidInitializationSettings initializationSettingsAndroid =
+    AndroidInitializationSettings("@mipmap/launcher_icon");
+```
+
+### Requesting permission
+
+`NotificationService.requestPermission()` calls:
+
+```dart
+await flutterLocalNotificationsPlugin
+    .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>()
+    ?.requestNotificationsPermission();
+```
+
+### Sending notifications
+
+**With skin/bundle image** — used for shop renewals and bundle changes:
+
+```dart
+NotificationService.showInstantNotification(
+  String title,
+  String body,
+  Uint8List? imageBytes, // downloaded before calling
+);
+```
+
+The image is rendered using `BigPictureStyleInformation` with a `ByteArrayAndroidBitmap`, producing an expanded notification with a large preview image on Android.
+
+**Without image** — used for Night Market alerts:
+
+```dart
+NotificationService.showInstantNotificationWithoutPicture(
+  String title,
+  String body,
+);
+```
+
+Both methods post to the Android notification channel `instant_notification` (display name: `Instant Notification`) with `Importance.max` and `Priority.high`.
+
+## Android channel
+
+```dart
+AndroidNotificationDetails(
+  'instant_notification',  // channel ID
+  'Instant Notification',  // channel name
+  importance: Importance.max,
+  priority: Priority.high,
+  showWhen: false,
+)
+```
+
+<Warning>
+  On Xiaomi and OPPO devices, Android battery optimisation settings often prevent background tasks from running reliably. If you are not receiving notifications on these devices, disable battery optimisation for Valstore in your device settings.
+</Warning>

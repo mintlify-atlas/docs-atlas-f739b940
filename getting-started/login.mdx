@@ -1,0 +1,88 @@
+---
+title: "Logging in"
+description: "Authenticate with your Riot account and select your Valorant region to access your shop."
+---
+
+Valstore authenticates you through Riot's official OAuth 2.0 flow using an in-app browser. Your credentials are entered directly on Riot's login page — Valstore only reads the access token from the redirect URL after authentication succeeds.
+
+## Login flow
+
+<Steps>
+  <Step title="Open the app and tap 'Login at Riot games'">
+    On the Valstore home screen, tap the **Login at Riot games** button. If this is your first time, you will be taken to the region selection screen first.
+  </Step>
+
+  <Step title="Select your Valorant region">
+    Choose the region that matches your Valorant account:
+
+    | Region | Value |
+    |---|---|
+    | Europe | `eu` |
+    | North America | `na` |
+    | Asia / Pacific | `ap` |
+    | Korea | `kr` |
+
+    Your selection is saved to `SharedPreferences` and used for all subsequent API requests. Tap **Continue** to proceed to the login screen.
+
+    <Warning>
+      Selecting the wrong region will result in failed API requests. Your region must match the server your Valorant account is registered on.
+    </Warning>
+  </Step>
+
+  <Step title="Sign in on Riot's login page">
+    An in-app browser (`flutter_inappwebview`) opens Riot's authorization endpoint:
+
+    ```
+    https://auth.riotgames.com/authorize
+      ?redirect_uri=https%3A%2F%2Fplayvalorant.com%2Fopt_in
+      &client_id=play-valorant-web-prod
+      &response_type=token%20id_token
+      &nonce=1
+      &scope=account%20openid
+    ```
+
+    Enter your Riot username and password. When prompted, accept cookies and tap **Stay signed in** — this ensures the session cookies are saved for background re-authentication.
+
+    <Info>
+      Your credentials are submitted directly to `auth.riotgames.com`. Valstore does not read, log, or transmit your username or password.
+    </Info>
+  </Step>
+
+  <Step title="Valstore extracts your access token">
+    After a successful login, Riot redirects the browser to a `playvalorant.com/opt_in` URL that contains your access token in the URL fragment. Valstore intercepts this redirect, extracts the token, and prevents the navigation from completing:
+
+    ```dart
+    RiotService.accessToken = newUrl.split('=')[1].split('&')[0];
+    ```
+
+    The app then derives your Riot user ID from the JWT payload of the access token.
+  </Step>
+
+  <Step title="Entitlements token is fetched">
+    With the access token in hand, Valstore requests an entitlements token from Riot's entitlements service:
+
+    ```
+    POST https://entitlements.auth.riotgames.com/api/token/v1/
+    Authorization: Bearer <access_token>
+    ```
+
+    The entitlements token is required alongside the access token for all subsequent store API calls to Riot's private PVP endpoints.
+  </Step>
+
+  <Step title="Session cookies are saved">
+    Before navigating to the store, Valstore reads the session cookies set by `auth.riotgames.com` and persists them to `SharedPreferences`. These cookies are used to silently refresh your access token in background tasks without prompting you to log in again.
+  </Step>
+</Steps>
+
+## Background re-authentication
+
+Valstore schedules background workers (via `workmanager`) to check your shop and send notifications even when the app is not open. These tasks call `RiotService.reauthenticateUser()`, which reuses the saved cookies to obtain a fresh access token from Riot without requiring you to log in manually.
+
+If the cookies have expired, the background task will fail silently. Re-opening the app and logging in again will restore the session.
+
+## Security notes
+
+- Riot credentials are never handled by Valstore code.
+- The access token and entitlements token are held in memory only during the active session.
+- Session cookies are stored in `SharedPreferences` on-device and are not transmitted anywhere other than `auth.riotgames.com` during re-authentication.
+- Valstore is an unofficial client. Using it may violate Riot's Terms of Service. Use at your own risk.

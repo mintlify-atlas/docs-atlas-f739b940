@@ -1,0 +1,58 @@
+---
+title: "Introduction"
+description: "Valstore is a Flutter app that lets you check your Valorant daily shop, Night Market, and bundles without launching the game."
+---
+
+<Warning>
+  Valstore has been **archived**. Riot Games requested its removal from Google Play, and the author has stepped back from active development. The source code remains available on GitHub and the app continues to function — you can fork it or build it from source.
+</Warning>
+
+Valstore is an open-source Flutter mobile app for Android that gives you portable access to your Valorant in-game shop. Instead of launching the full Valorant client to check your daily skin rotation, you can see your offers, browse the skin gallery, manage a wishlist, and receive push notifications — all from your phone.
+
+It authenticates through Riot's official login endpoints and fetches skin data from the community-maintained [valorant-api.com](https://valorant-api.com). Valstore itself never handles your credentials; they go directly to Riot's servers.
+
+The last released version is **2.1.1+18**.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Player Shop" icon="shop">
+    View your 4 daily skin offers with prices, content tier indicators, and a countdown to the next shop refresh.
+  </Card>
+  <Card title="Night Market" icon="moon">
+    Check your discounted Night Market offers and see the percentage saving on each skin.
+  </Card>
+  <Card title="Bundles" icon="layer-group">
+    Browse currently available weapon bundles and see every skin included in each bundle.
+  </Card>
+  <Card title="Skin gallery" icon="images">
+    Browse all purchasable skins in the game and preview them before adding to your wishlist.
+  </Card>
+  <Card title="Wishlist" icon="heart">
+    Save skins to your wishlist and get notified as soon as one appears in your daily shop.
+  </Card>
+  <Card title="Notifications" icon="bell">
+    Receive push notifications for wishlisted skins, Night Market openings, and new bundles.
+  </Card>
+</CardGroup>
+
+## How authentication works
+
+Valstore uses Riot's OAuth 2.0 authorization flow. When you log in, an in-app browser opens Riot's own login page at `auth.riotgames.com`. After you sign in, Riot redirects to a `playvalorant.com` URL that contains your access token. Valstore intercepts that redirect, extracts the token, and uses it to fetch your shop data from Riot's private API endpoints.
+
+Your username and password are entered directly on Riot's page — Valstore never reads or stores them.
+
+<Info>
+  Valstore is not affiliated with or endorsed by Riot Games. It uses unofficial API endpoints that are not publicly documented or supported. Riot may change or block these endpoints at any time.
+</Info>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="mobile" href="/getting-started/installation">
+    Build and install Valstore on your Android device from source.
+  </Card>
+  <Card title="Logging in" icon="key" href="/getting-started/login">
+    Authenticate with your Riot account and select your region.
+  </Card>
+</CardGroup>

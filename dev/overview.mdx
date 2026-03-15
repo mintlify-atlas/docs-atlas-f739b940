@@ -1,0 +1,127 @@
+---
+title: "Architecture overview"
+description: "How Valstore is structured: layers, state management, routing, and background tasks."
+---
+
+Valstore is a Flutter application built on the **Provider** pattern. A single `ValstoreProvider` (extends `ChangeNotifier`) sits at the root of the widget tree and coordinates all state updates across screens.
+
+## App entry point
+
+`main.dart` performs three initialisation steps before the widget tree is mounted:
+
+<Steps>
+  <Step title="Firebase initialisation">
+    `Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)` is called with the generated options from `firebase_options.dart`. This must complete before any Firestore or Auth calls are made.
+  </Step>
+  <Step title="Workmanager initialisation">
+    `Workmanager().initialize(callbackDispatcher, isInDebugMode: kDebugMode)` registers the top-level `callbackDispatcher` function (annotated `@pragma("vm:entry-point")`) as the background task entry point. This step is skipped on web.
+  </Step>
+  <Step title="NotificationService initialisation">
+    `NotificationService.initialize()` sets up Android and iOS notification channels so that background tasks can fire notifications before the UI is mounted.
+  </Step>
+</Steps>
+
+## Layer diagram
+
+<CardGroup cols={2}>
+  <Card title="UI Layer" icon="display">
+    Screen folders under `lib/`:
+    - `shops/` — ShopsPage (daily store, bundles, night market)
+    - `galery/` — FavoritesPage (wishlist gallery)
+    - `account/` — InventoryPage (owned skins)
+    - `login/` — HomeScreen, RegionPage, WebViewPage
+    - `settings/` — user preferences
+  </Card>
+  <Card title="State Layer" icon="arrow-right-arrow-left">
+    `ValstoreProvider extends ChangeNotifier`
+
+    Central state object. Holds the `Valstore` instance and exposes methods for loading player data, shop, bundles, night market, and wishlist. Calls `notifyListeners()` after each mutation.
+  </Card>
+  <Card title="Service Layer" icon="gear">
+    - `RiotService` — all Riot API calls, token management, re-auth
+    - `FireStoreService` — Firestore reads/writes (skins cache, wishlist)
+    - `NotificationService` — local notification delivery
+    - `InofficialValorantAPI` — valorant-api.com client (version, level borders, skin data)
+  </Card>
+  <Card title="Model Layer" icon="database">
+    - `player.dart` — `Player`, `PlayerInfo`, `Wallet`, `Card`
+    - `firebase_skin.dart` — `FirebaseSkin`, `ContentTier`, `PlayerShop`
+    - `storefront.dart` — `Storefront`, `SkinsPanelLayout`, `Bundle`
+    - `store_models.dart` — `NightMarket`, `BonusStore`, `Shop`
+    - `val_api_skins.dart` — `ValApiSkins`, `Data`, `Levels`, `Chromas`
+    - `loadout.dart` — `Loadout`, `Guns`, `Identity`, `PlayerLoadoutItem`
+    - `valstore.dart` — `Valstore` (root app-state aggregate)
+  </Card>
+</CardGroup>
+
+## Routes
+
+| Route | Widget | Description |
+|---|---|---|
+| `/` | `HomeScreen` | Entry screen — redirects to `/region` if no region is saved, otherwise shows login or home |
+| `/region` | `RegionPage` | Region selection (saved to `SharedPreferences`) |
+| `/login` | `WebViewPage` | In-app WebView SSO login via Riot's auth endpoint |
+| `/store` | `ShopsPage` | Daily shop, featured bundles, night market |
+| `/inventory` | `InventoryPage` | Player's owned skins |
+| `/favorites` | `FavoritesPage` | Wishlisted skins from Firestore |
+
+## Provider setup
+
+`ValstoreProvider` is injected at the root `MaterialApp` via `ChangeNotifierProvider`:
+
+```dart
+ChangeNotifierProvider(
+  create: (context) => ValstoreProvider(),
+  builder: (context, child) {
+    return MaterialApp(
+      routes: routes,
+      navigatorKey: navigatorKey,
+      theme: themeData,
+    );
+  },
+)
+```
+
+The global `navigatorKey` allows background-task code and services to push routes (e.g. redirect to `/region`) without a `BuildContext`.
+
+## Background tasks
+
+Valstore uses **Workmanager** to run periodic store checks while the app is closed. Three task names are registered:
+
+<AccordionGroup>
+  <Accordion title="ValStoreStoreRenewal">
+    Calls `RiotService.recheckStore()`. Re-authenticates the user, fetches the current daily shop, and fires a local notification for any wishlisted skin that is in rotation.
+  </Accordion>
+  <Accordion title="NightMarketRenewal">
+    Calls `RiotService.recheckNightmarket()`. Checks whether the Night Market is active and sends a one-time notification when it opens. A `didNotifyNM` flag in `SharedPreferences` prevents repeat notifications.
+  </Accordion>
+  <Accordion title="ValStoreBundleRenewal">
+    Calls `RiotService.recheckBundle()`. Compares the current bundle ID against the last known bundle stored in `SharedPreferences`. Sends a notification with the bundle artwork when a new bundle is detected.
+  </Accordion>
+</AccordionGroup>
+
+All three task callbacks re-initialise Firebase independently (in case the app process is cold-started by Workmanager) before calling the relevant `RiotService` method.
+
+## Theme
+
+The app uses **Material 3** with a dark colour scheme defined in `lib/theme.dart`. Key colours:
+
+- Primary / accent: `#FF4655` (Valorant red)
+- App bar / drawer background: `#16141A`
+- Font: [Nunito](https://fonts.google.com/specimen/Nunito) via `google_fonts`
+
+## Key dependencies
+
+| Package | Version | Purpose |
+|---|---|---|
+| `provider` | ^6.0.5 | State management |
+| `firebase_core` | ^3.8.0 | Firebase SDK initialisation |
+| `cloud_firestore` | ^5.5.0 | Skin cache and wishlist persistence |
+| `firebase_auth` | ^5.3.3 | Anonymous Firebase Auth |
+| `flutter_inappwebview` | ^6.1.5 | Riot SSO login WebView + cookie management |
+| `workmanager` | git/main | Background periodic tasks |
+| `flutter_local_notifications` | ^19.0.0 | Store renewal push notifications |
+| `http` | ^1.3.0 | Riot and valorant-api.com HTTP calls |
+| `shared_preferences` | ^2.0.17 | Persisted region, cookies, flags |
+| `google_fonts` | ^6.2.1 | Nunito typeface |
+| `cached_network_image` | ^3.3.1 | Skin icon image caching |
